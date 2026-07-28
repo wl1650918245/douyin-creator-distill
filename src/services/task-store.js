@@ -293,10 +293,15 @@ function backfillFavoritesDirectoryCache() {
 backfillFavoritesDirectoryCache();
 backfillSubscriptions();
 
+function closeTaskStore() {
+  db.close();
+}
+
 module.exports = {
   addDistillationSources,
   addRun,
   appendLog,
+  closeTaskStore,
   completeSubscriptionCheck,
   createTaskAttempt,
   createAgentReview,

@@ -42,5 +42,6 @@ for (const [taskId, source] of [["favorite-old", "?????"], ["favorite-new", "我
 }
 assert.equal(store.listSubscriptions().filter((item) => item.source_type === "favorites").length, 1, "收藏夹按 Profile 稳定身份去重");
 
+store.closeTaskStore();
 fs.rmSync(root, { recursive: true, force: true });
 console.log("subscription and favorites cache tests passed");

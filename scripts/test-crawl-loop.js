@@ -159,5 +159,6 @@ assert.throws(
   /不能混合不同博主/,
 );
 
+store.closeTaskStore();
 fs.rmSync(root, { recursive: true, force: true });
 console.log("crawl loop policy and persistence tests passed");
