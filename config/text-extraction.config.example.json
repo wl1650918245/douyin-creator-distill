@@ -1,0 +1,5 @@
+{
+  "apiBaseUrl": "https://openapi.biji.com/open/api/v1",
+  "apiKey": "replace-with-your-api-key",
+  "clientId": "replace-with-your-client-id"
+}

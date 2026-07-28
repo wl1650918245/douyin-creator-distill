@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="620" viewBox="0 0 1440 620" role="img" aria-labelledby="title desc">
+  <title id="title">CreatorDistill capability map</title>
+  <desc id="desc">Seven local product modules organized around evidence, execution, and analysis assets</desc>
+  <rect width="1440" height="620" rx="30" fill="#07051A"/>
+  <g font-family="Segoe UI, Microsoft YaHei, sans-serif">
+    <text x="70" y="72" fill="#F5F2FF" font-size="29" font-weight="800">一个本地 Agent，七个清晰工作区</text>
+    <text x="70" y="105" fill="#948DAB" font-size="16">目录、任务和分析资产分层，避免把所有按钮堆在同一页。</text>
+    <g transform="translate(70 150)">
+      <rect width="390" height="178" rx="22" fill="#100D31" stroke="#58D6F4" stroke-opacity=".46"/>
+      <text x="28" y="45" fill="#58D6F4" font-size="14" font-weight="800">01  内容工作台</text>
+      <text x="28" y="87" fill="#F5F2FF" font-size="23" font-weight="800">获取、筛选、选择作品</text>
+      <text x="28" y="125" fill="#948DAB" font-size="15">主页 / 单条 / 收藏夹 · 日期与互动筛选</text>
+      <text x="28" y="151" fill="#948DAB" font-size="15">转写方式逐条可见</text>
+    </g>
+    <g transform="translate(525 150)">
+      <rect width="390" height="178" rx="22" fill="#100D31" stroke="#58D6F4" stroke-opacity=".46"/>
+      <text x="28" y="45" fill="#58D6F4" font-size="14" font-weight="800">02  任务中心</text>
+      <text x="28" y="87" fill="#F5F2FF" font-size="23" font-weight="800">进度、日志、失败恢复</text>
+      <text x="28" y="125" fill="#948DAB" font-size="15">有限恢复 Loop · 风控停止边界</text>
+      <text x="28" y="151" fill="#948DAB" font-size="15">任务完成后保留可追溯产物</text>
+    </g>
+    <g transform="translate(980 150)">
+      <rect width="390" height="178" rx="22" fill="#100D31" stroke="#64DCA8" stroke-opacity=".46"/>
+      <text x="28" y="45" fill="#64DCA8" font-size="14" font-weight="800">03  关注与更新</text>
+      <text x="28" y="87" fill="#F5F2FF" font-size="23" font-weight="800">博主与收藏夹增量检查</text>
+      <text x="28" y="125" fill="#948DAB" font-size="15">24 小时目录缓存 · 定时检查</text>
+      <text x="28" y="151" fill="#948DAB" font-size="15">只发现新增，不自动消耗额度</text>
+    </g>
+    <g transform="translate(70 370)">
+      <rect width="290" height="178" rx="22" fill="#100D31" stroke="#6E81E8" stroke-opacity=".5"/>
+      <text x="26" y="45" fill="#8190F1" font-size="14" font-weight="800">04  爆款拆解</text>
+      <text x="26" y="87" fill="#F5F2FF" font-size="21" font-weight="800">多作品规律分析</text>
+      <text x="26" y="127" fill="#948DAB" font-size="14">只读取已转写文本</text>
+      <text x="26" y="151" fill="#948DAB" font-size="14">报告引用作品证据</text>
+    </g>
+    <g transform="translate(405 370)">
+      <rect width="290" height="178" rx="22" fill="#100D31" stroke="#6E81E8" stroke-opacity=".5"/>
+      <text x="26" y="45" fill="#8190F1" font-size="14" font-weight="800">05  选题顾问</text>
+      <text x="26" y="87" fill="#F5F2FF" font-size="21" font-weight="800">从报告生成选题</text>
+      <text x="26" y="127" fill="#948DAB" font-size="14">用户痛点、Hook、角度</text>
+      <text x="26" y="151" fill="#948DAB" font-size="14">不是随机标题生成器</text>
+    </g>
+    <g transform="translate(740 370)">
+      <rect width="290" height="178" rx="22" fill="#100D31" stroke="#ED4FA9" stroke-opacity=".5"/>
+      <text x="26" y="45" fill="#F274BA" font-size="14" font-weight="800">06  博主智能体</text>
+      <text x="26" y="87" fill="#F5F2FF" font-size="21" font-weight="800">多材料知识蒸馏</text>
+      <text x="26" y="127" fill="#948DAB" font-size="14">证据画像与矛盾保留</text>
+      <text x="26" y="151" fill="#948DAB" font-size="14">支持新稿审阅</text>
+    </g>
+    <g transform="translate(1075 370)">
+      <rect width="295" height="178" rx="22" fill="#100D31" stroke="#EAB85C" stroke-opacity=".5"/>
+      <text x="26" y="45" fill="#EAB85C" font-size="14" font-weight="800">07  设置中心</text>
+      <text x="26" y="87" fill="#F5F2FF" font-size="21" font-weight="800">账号、通道、依赖</text>
+      <text x="26" y="127" fill="#948DAB" font-size="14">采集与收藏账号可分离</text>
+      <text x="26" y="151" fill="#948DAB" font-size="14">密钥与 Profile 留在本机</text>
+    </g>
+  </g>
+</svg>

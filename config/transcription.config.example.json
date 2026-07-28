@@ -1,0 +1,12 @@
+{
+  "selectionMode": "manual",
+  "defaultProvider": "getnotes",
+  "cloudDailyReferenceLimit": 100,
+  "whisper": {
+    "model": "small",
+    "device": "cpu",
+    "computeType": "int8",
+    "language": "zh",
+    "retainDownloadedMedia": false
+  }
+}

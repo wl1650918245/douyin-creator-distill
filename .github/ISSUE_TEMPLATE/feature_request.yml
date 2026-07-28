@@ -1,0 +1,36 @@
+name: 功能建议
+description: 提交清晰的用户问题和验收标准
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: user-problem
+    attributes:
+      label: 用户问题
+      description: 现在什么事情难以完成？请不要只描述一个按钮。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案
+      description: 最简单可行的方案是什么？
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准
+      description: 如何证明它已经解决问题？
+    validations:
+      required: true
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: 边界确认
+      options:
+        - label: 不要求绕过验证码、登录限制或平台风控
+          required: true
+        - label: 不依赖提交真实账号、Cookie、密钥或未脱敏内容
+          required: true

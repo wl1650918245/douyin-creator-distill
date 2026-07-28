@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="520" viewBox="0 0 1440 520" role="img" aria-labelledby="title desc">
+  <title id="title">CreatorDistill workflow</title>
+  <desc id="desc">From a creator profile or favorites to evidence, transcripts, analysis, and reusable assets</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1440" y2="520" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0C0924"/>
+      <stop offset="1" stop-color="#07051A"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="70" y1="0" x2="1370" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#58D6F4"/>
+      <stop offset=".56" stop-color="#6E81E8"/>
+      <stop offset="1" stop-color="#ED4FA9"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+      <path d="M0 0 8 4 0 8Z" fill="#58D6F4"/>
+    </marker>
+  </defs>
+  <rect width="1440" height="520" rx="30" fill="url(#bg)"/>
+  <g font-family="Segoe UI, Microsoft YaHei, sans-serif">
+    <text x="70" y="72" fill="#F5F2FF" font-size="29" font-weight="800">真实数据流：先证据，后分析</text>
+    <text x="70" y="105" fill="#948DAB" font-size="16">每一阶段独立落盘，可暂停、复核、重试，不把抓取和模型调用耦合在一起。</text>
+    <path d="M170 265H1270" stroke="#58D6F4" stroke-opacity=".28" stroke-width="3"/>
+    <g>
+      <rect x="58" y="170" width="210" height="190" rx="22" fill="#121039" stroke="#58D6F4" stroke-opacity=".42"/>
+      <circle cx="98" cy="211" r="19" fill="#58D6F4"/><text x="98" y="218" text-anchor="middle" fill="#071221" font-size="19" font-weight="900">1</text>
+      <text x="82" y="263" fill="#F5F2FF" font-size="22" font-weight="800">输入来源</text>
+      <text x="82" y="301" fill="#A8A2BC" font-size="15">博主主页 / 单条作品</text>
+      <text x="82" y="330" fill="#A8A2BC" font-size="15">本人收藏夹</text>
+    </g>
+    <path d="M268 265H302" stroke="#58D6F4" stroke-width="3" marker-end="url(#arrow)"/>
+    <g>
+      <rect x="312" y="170" width="210" height="190" rx="22" fill="#121039" stroke="#58D6F4" stroke-opacity=".42"/>
+      <circle cx="352" cy="211" r="19" fill="#58D6F4"/><text x="352" y="218" text-anchor="middle" fill="#071221" font-size="19" font-weight="900">2</text>
+      <text x="336" y="263" fill="#F5F2FF" font-size="22" font-weight="800">JSON 证据层</text>
+      <text x="336" y="301" fill="#A8A2BC" font-size="15">去重、数量审核</text>
+      <text x="336" y="330" fill="#A8A2BC" font-size="15">保留原始抓取证据</text>
+    </g>
+    <path d="M522 265H556" stroke="#58D6F4" stroke-width="3" marker-end="url(#arrow)"/>
+    <g>
+      <rect x="566" y="170" width="240" height="190" rx="22" fill="#121039" stroke="#6E81E8" stroke-opacity=".55"/>
+      <circle cx="606" cy="211" r="19" fill="#6E81E8"/><text x="606" y="218" text-anchor="middle" fill="#071221" font-size="19" font-weight="900">3</text>
+      <text x="590" y="263" fill="#F5F2FF" font-size="22" font-weight="800">双通道转写</text>
+      <text x="590" y="301" fill="#A8A2BC" font-size="15">云端链接转写</text>
+      <text x="590" y="330" fill="#A8A2BC" font-size="15">本地 FFmpeg + Whisper</text>
+    </g>
+    <path d="M806 265H840" stroke="#58D6F4" stroke-width="3" marker-end="url(#arrow)"/>
+    <g>
+      <rect x="850" y="170" width="240" height="190" rx="22" fill="#121039" stroke="#6E81E8" stroke-opacity=".55"/>
+      <circle cx="890" cy="211" r="19" fill="#6E81E8"/><text x="890" y="218" text-anchor="middle" fill="#071221" font-size="19" font-weight="900">4</text>
+      <text x="874" y="263" fill="#F5F2FF" font-size="22" font-weight="800">证据驱动分析</text>
+      <text x="874" y="301" fill="#A8A2BC" font-size="15">爆款拆解 / 选题顾问</text>
+      <text x="874" y="330" fill="#A8A2BC" font-size="15">来源引用与审计门禁</text>
+    </g>
+    <path d="M1090 265H1124" stroke="#58D6F4" stroke-width="3" marker-end="url(#arrow)"/>
+    <g>
+      <rect x="1134" y="170" width="248" height="190" rx="22" fill="#121039" stroke="#ED4FA9" stroke-opacity=".55"/>
+      <circle cx="1174" cy="211" r="19" fill="#ED4FA9"/><text x="1174" y="218" text-anchor="middle" fill="#071221" font-size="19" font-weight="900">5</text>
+      <text x="1158" y="263" fill="#F5F2FF" font-size="22" font-weight="800">可复用资产</text>
+      <text x="1158" y="301" fill="#A8A2BC" font-size="15">Markdown / Obsidian</text>
+      <text x="1158" y="330" fill="#A8A2BC" font-size="15">博主智能体与审稿</text>
+    </g>
+    <rect x="316" y="407" width="806" height="54" rx="27" fill="#0A1C34" stroke="url(#accent)"/>
+    <text x="719" y="441" text-anchor="middle" fill="#BDEFF9" font-size="15" font-weight="700">SQLite 持久化任务、订阅、缓存、审核结论与产物索引</text>
+  </g>
+</svg>

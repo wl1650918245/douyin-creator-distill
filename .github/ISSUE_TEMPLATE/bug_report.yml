@@ -1,0 +1,57 @@
+name: Bug 报告
+description: 报告可复现的运行问题
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先移除 Cookie、密钥、账号 ID、收藏夹内容和本机用户名。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 问题描述
+      description: 实际发生了什么？
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: 请提供最小、稳定的复现步骤。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期结果
+    validations:
+      required: true
+  - type: dropdown
+    id: module
+    attributes:
+      label: 模块
+      options:
+        - 内容工作台
+        - 任务中心
+        - 关注与更新
+        - 转写
+        - 爆款拆解
+        - 选题顾问
+        - 博主智能体
+        - 设置与运行环境
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 环境
+      placeholder: Windows 11 / Node 20 / Chrome 版本
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 脱敏日志
+      render: text

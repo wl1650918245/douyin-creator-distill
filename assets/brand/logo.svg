@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">CreatorDistill</title>
+  <defs>
+    <linearGradient id="surface" x1="8" y1="5" x2="57" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#58D6F4"/>
+      <stop offset="1" stop-color="#6E81E8"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="22" y1="16" x2="44" y2="49" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#DDF8FF"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="18" fill="#0B0924"/>
+  <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#surface)"/>
+  <path d="M20 15h15.5C45.7 15 53 22.3 53 32S45.7 49 35.5 49H20V15Z" fill="#081221"/>
+  <path d="M28 23h7.2c5.6 0 9.8 3.7 9.8 9s-4.2 9-9.8 9H28V23Z" fill="url(#shine)"/>
+  <path d="M17 19h6v26h-6z" fill="#081221"/>
+  <circle cx="47.5" cy="17.5" r="3.5" fill="#64DCA8"/>
+  <circle cx="51" cy="47" r="2" fill="#ED4FA9"/>
+</svg>

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "1.0",
+  "favoritesBinding": "shared",
+  "profiles": {
+    "content": {
+      "id": "content-collector",
+      "profilePath": ""
+    },
+    "favorites": {
+      "id": "favorites-owner",
+      "profilePath": ""
+    }
+  }
+}

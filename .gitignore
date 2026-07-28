@@ -1,0 +1,34 @@
+# Dependencies and local editor files
+node_modules/
+.vscode/
+.idea/
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+config/model.config.json
+config/text-extraction.config.json
+config/transcription.config.json
+config/account-profiles.config.json
+
+# User-generated assets and runtime state
+DouyinKnowledgeAssets/
+raw/
+.runtime/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.log
+
+# Browser profiles, downloads, and temporary artifacts
+ChromeProfile/
+downloads/
+tmp/
+*.tmp
+
+# Bundled local runtime (installed/copied per machine)
+runtime/bin/
+runtime/models/
+runtime/python/.venv/
+runtime/*.png

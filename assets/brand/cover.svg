@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
+  <title id="title">CreatorDistill</title>
+  <desc id="desc">Local-first creator intelligence agent for Douyin</desc>
+  <defs>
+    <radialGradient id="glowA" cx="0" cy="0" r="1" gradientTransform="translate(1015 86) rotate(132) scale(495 388)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#664FC9" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#07051A" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB" cx="0" cy="0" r="1" gradientTransform="translate(88 620) rotate(-43) scale(505 318)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#087EA4" stop-opacity=".45"/>
+      <stop offset="1" stop-color="#07051A" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="line" x1="218" y1="166" x2="1138" y2="516" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#58D6F4" stop-opacity=".1"/>
+      <stop offset=".52" stop-color="#58D6F4"/>
+      <stop offset="1" stop-color="#ED4FA9" stop-opacity=".18"/>
+    </linearGradient>
+    <filter id="blur"><feGaussianBlur stdDeviation="24"/></filter>
+  </defs>
+  <rect width="1280" height="640" rx="38" fill="#07051A"/>
+  <rect width="1280" height="640" rx="38" fill="url(#glowA)"/>
+  <rect width="1280" height="640" rx="38" fill="url(#glowB)"/>
+  <g opacity=".35">
+    <path d="M790 104h364M790 144h286M790 184h324M790 224h238" stroke="#8E7CCA" stroke-width="2"/>
+    <path d="M877 314h278M830 354h325M925 394h230M852 434h303" stroke="#8E7CCA" stroke-width="2"/>
+  </g>
+  <circle cx="924" cy="292" r="160" fill="none" stroke="#58D6F4" stroke-opacity=".12" stroke-width="2"/>
+  <circle cx="924" cy="292" r="114" fill="none" stroke="#58D6F4" stroke-opacity=".2" stroke-width="2"/>
+  <circle cx="924" cy="292" r="68" fill="#0B0924" stroke="#58D6F4" stroke-width="2"/>
+  <path d="M897 251h34c25 0 43 17 43 41s-18 41-43 41h-34v-82Z" fill="#58D6F4"/>
+  <path d="M912 268h18c14 0 25 10 25 24s-11 24-25 24h-18v-48Z" fill="#081221"/>
+  <circle cx="1003" cy="221" r="7" fill="#64DCA8"/>
+  <circle cx="1030" cy="350" r="5" fill="#ED4FA9"/>
+  <path d="M724 474c98-85 182-42 271-102 69-47 98-126 185-131" fill="none" stroke="url(#line)" stroke-width="3"/>
+  <circle cx="724" cy="474" r="5" fill="#58D6F4"/>
+  <circle cx="1180" cy="241" r="5" fill="#ED4FA9"/>
+  <g font-family="Segoe UI, Microsoft YaHei, sans-serif">
+    <text x="96" y="145" fill="#58D6F4" font-size="19" font-weight="700" letter-spacing="4">LOCAL-FIRST CREATOR INTELLIGENCE</text>
+    <text x="92" y="255" fill="#F5F2FF" font-size="76" font-weight="800" letter-spacing="-2">CreatorDistill</text>
+    <text x="96" y="321" fill="#C8C2DA" font-size="31" font-weight="600">把创作者内容蒸馏成可复用的知识资产</text>
+    <text x="96" y="380" fill="#948DAB" font-size="21">目录采集 · 双通道转写 · 爆款拆解 · 选题生成 · 博主智能体</text>
+    <rect x="96" y="437" width="260" height="54" rx="27" fill="#58D6F4"/>
+    <text x="226" y="472" text-anchor="middle" fill="#071221" font-size="18" font-weight="800">Douyin Creator Agent</text>
+    <text x="96" y="555" fill="#716A8C" font-size="16">github.com/wl1650918245/douyin-creator-distill</text>
+  </g>
+</svg>

@@ -1,0 +1,35 @@
+{
+  "name": "douyin-creator-distill",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first creator intelligence agent for Douyin content, transcription, viral analysis, topic discovery, and creator distillation",
+  "scripts": {
+    "start": "node server.js",
+    "doctor": "node scripts/diagnose-runtime.js",
+    "cookies:douyin": "node scripts/export-douyin-cookies.js",
+    "whisper:smoke": "node scripts/run-whisper-smoke.js",
+    "login:douyin": "node src/adapters/douyin/profile-login.js",
+    "login:content": "node src/adapters/douyin/profile-login.js --role=content",
+    "login:favorites": "node src/adapters/douyin/profile-login.js --role=favorites",
+    "test:accounts": "node scripts/test-account-profiles.js",
+    "test:account-ui": "node scripts/test-account-ui.js",
+    "test:favorites": "node scripts/test-favorites-adapter.js",
+    "test:subscriptions": "node scripts/test-subscriptions.js",
+    "test:intelligence-ui": "node scripts/test-intelligence-ui.js",
+    "test:loop": "node scripts/test-crawl-loop.js",
+    "test:unit": "npm run test:loop && npm run test:accounts && npm run test:favorites && npm run test:subscriptions",
+    "test:ui": "npm run test:account-ui && npm run test:intelligence-ui",
+    "crawl:profile": "node src/adapters/douyin/profile-crawler.js",
+    "check": "node --check server.js && node --check app.js && node --check scripts/diagnose-runtime.js && node --check scripts/export-douyin-cookies.js && node --check scripts/run-whisper-smoke.js && node --check scripts/test-account-profiles.js && node --check scripts/test-account-ui.js && node --check scripts/test-favorites-adapter.js && node --check scripts/test-subscriptions.js && node --check scripts/test-intelligence-ui.js && node --check scripts/test-crawl-loop.js && node --check src/config/runtime-config.js && node --check src/config/account-profiles.js && node --check src/config/transcription-config.js && node --check src/services/account-profile-service.js && node --check src/services/task-store.js && node --check src/services/json-audit.js && node --check src/services/crawl-loop-policy.js && node --check src/services/directory-crawl-service.js && node --check src/services/getnotes-transcription-service.js && node --check src/services/local-whisper-transcription-service.js && node --check src/services/subscription-scheduler.js && node --check src/services/transcription-settings-service.js && node --check src/services/viral-breakdown-service.js && node --check src/services/content-intelligence-service.js && node --check src/adapters/douyin/cookie-exporter.js && node --check src/adapters/douyin/profile-crawler.js && node --check src/adapters/douyin/profile-login.js && node --check src/adapters/douyin/favorites-crawler.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.0",
+    "playwright": "^1.50.0"
+  },
+  "optionalDependencies": {
+    "puppeteer-extra-plugin-stealth": "^2.11.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

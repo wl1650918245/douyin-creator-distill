@@ -1,0 +1,233 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>CreatorDistill · 自媒体工作台</title>
+    <meta name="description" content="本地优先的抖音创作者内容采集、转写、爆款拆解、选题生成与知识蒸馏 Agent。" />
+    <link rel="icon" href="./assets/brand/logo.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand"><img class="brand-mark" src="./assets/brand/logo.svg" alt="" /><span><strong>CreatorDistill</strong><small>自媒体工作台</small></span></div>
+        <section class="account-card" data-open-settings role="link" tabindex="0" aria-label="打开账号中心设置"><div class="account-avatar">账</div><div><strong>账号中心</strong><small id="account-sidebar-summary"><b></b>正在读取账号状态</small></div><button id="manage-accounts" class="tiny-button" type="button">管理</button></section>
+        <nav class="nav-list" aria-label="主导航">
+          <p>工作流</p>
+          <button class="nav-item is-active" type="button" data-view="workbench"><span>01</span>内容工作台</button>
+          <button class="nav-item" type="button" data-view="tasks"><span>02</span>任务中心</button>
+          <button class="nav-item" type="button" data-view="archive"><span>03</span>关注与更新</button>
+          <p>分析资产</p>
+          <button class="nav-item" type="button" data-view="breakdown"><span>04</span>爆款拆解</button>
+          <button class="nav-item" type="button" data-view="topics"><span>05</span>选题顾问</button>
+          <button class="nav-item" type="button" data-view="agent"><span>06</span>博主智能体</button>
+        </nav>
+        <div class="sidebar-footer">
+          <small><b></b>本地引擎就绪</small>
+          <button class="storage-button" type="button" data-open-storage><span>知识资产目录</span><strong>Obsidian 库</strong></button>
+          <button class="storage-button settings-button" type="button" data-open-settings><span>系统与服务</span><strong>设置中心</strong></button>
+        </div>
+      </aside>
+
+      <main class="main-panel">
+        <header class="topbar"><div><span class="eyebrow">当前模块</span><strong id="view-title">内容工作台</strong></div><div class="topbar-status"><span></span>JSON 优先，转写后置</div></header>
+
+        <section id="workbench-view" class="view-panel is-active">
+        <section class="directory-source">
+          <div class="source-heading"><span class="eyebrow cyan">获取内容目录</span><p>输入主页、作品链接或抖音号</p></div>
+          <div class="source-control">
+            <label class="sr-only" for="source-input">输入抖音号或分享链接</label>
+            <div class="input-row"><input id="source-input" type="text" placeholder="粘贴博主主页、视频链接，或直接输入抖音号" /><button id="fetch-directory" class="primary-button" type="button">获取内容目录</button></div>
+            <div class="source-meta"><div class="source-examples"><span>来源：</span><button type="button" data-example="主页">博主主页</button><button type="button" data-example="单条">单条作品</button><button type="button" data-example="收藏">我的收藏夹</button></div><p id="source-status">先抓取并审核 JSON，再展示可筛选的作品目录。</p></div>
+            <div class="source-favorites-action"><button id="fetch-favorites" class="source-favorites-button" type="button">抓取我的收藏夹</button><span>使用已验证的收藏夹账号，先发现文件夹，再选择抓取范围。</span></div>
+            <div class="asset-destination"><span>本次目录产物</span><strong><i>Obsidian 库</i><code data-asset-path="raw\\douyin-analysis\\&lt;博主&gt;">正在读取本地运行配置...\raw\douyin-analysis\&lt;博主&gt;</code></strong><button class="text-button" type="button" data-open-storage>更改位置</button></div>
+          </div>
+          <section id="source-progress" class="source-progress" aria-live="polite" hidden></section>
+        </section>
+
+        <section class="workspace-grid">
+          <aside id="creator-summary" class="creator-summary">
+            <div class="creator-identity"><div id="creator-avatar" class="creator-avatar">-</div><div><span class="eyebrow">当前目录</span><h2 id="creator-name">未加载目录</h2><p id="creator-meta">请从抓取归档加载真实 JSON。</p></div></div>
+            <div class="summary-stats"><div><b id="total-count">-</b><span>目录作品</span></div><div><b id="video-count">-</b><span>视频</span></div><div><b id="image-count">-</b><span>图文</span></div><div><b id="audit-status" class="status-pass">-</b><span>JSON 审核</span></div></div>
+            <div class="creator-note"><span class="eyebrow cyan">处理规则</span><p>先从目录筛选作品。深度拆解与知识蒸馏只使用已转写内容。</p></div>
+          </aside>
+          <div id="workspace-resizer" class="workspace-resizer" role="separator" aria-label="调整当前目录信息卡宽度" aria-orientation="vertical" aria-valuemin="196" aria-valuemax="380" aria-valuenow="210" tabindex="0"></div>
+
+          <div class="workspace-main">
+          <section id="directory-mode-banner" class="directory-mode-banner" aria-live="polite" hidden></section>
+          <section class="content-panel">
+          <div class="content-toolbar"><div><span class="section-label"><i></i>作品目录</span><h2>内容列表 <small id="visible-count">86 / 86 条</small></h2></div><div class="toolbar-actions"><button id="select-filtered" class="select-filtered-button" type="button">全选筛选结果 86 条</button><div class="sort-controls" aria-label="排序方式"><span>排序</span><button class="sort-button is-active" type="button" data-sort="date">日期</button><button class="sort-button" type="button" data-sort="likes">点赞</button><button class="sort-button" type="button" data-sort="interactions">总互动</button></div></div></div>
+
+          <div class="filter-bar" aria-label="目录筛选">
+            <label>类型<select id="type-filter"><option value="all">全部</option><option value="视频">视频</option><option value="图文">图文</option></select></label>
+            <label>转写<select id="transcript-filter"><option value="all">全部</option><option value="未转写">未转写</option><option value="已转写">已转写</option></select></label>
+            <label>时间<select id="date-filter"><option value="all">全部时间</option><option value="30">最近 30 天</option><option value="90">最近 90 天</option></select></label>
+            <label>最低点赞<input id="min-likes" type="number" min="0" placeholder="例如 10000" /></label>
+            <label>最低总互动<input id="min-interactions" type="number" min="0" placeholder="例如 30000" /></label>
+            <button id="top-content" class="filter-shortcut" type="button">高价值前 20%</button><button id="reset-filters" class="text-button" type="button">重置</button>
+          </div>
+
+          <div class="table-scroll"><table><thead><tr><th class="check-cell"><input id="select-page" type="checkbox" aria-label="全选本页" /></th><th>作品</th><th>发布日期</th><th>类型</th><th>点赞</th><th>评论</th><th>收藏</th><th>分享</th><th>总互动</th><th>文本</th><th>作品简介</th><th>操作</th></tr></thead><tbody id="works-body"></tbody></table></div>
+          <div class="table-footer"><div id="page-summary">第 1 页，共 2 页</div><div class="pagination"><button id="previous-page" type="button">上一页</button><span id="page-buttons"></span><button id="next-page" type="button">下一页</button></div><label>每页 <select id="page-size"><option value="20">20</option><option value="50" selected>50</option><option value="100">100</option></select> 条</label></div>
+          </section>
+          <section id="selection-bar" class="selection-bar" aria-live="polite"><div><span id="selection-count">未选择作品</span><small id="selection-note">先筛选，再勾选作品。深度拆解和知识蒸馏依赖完整转写文本。</small><small class="channel-policy">转写通道：每次提交时手动选择</small></div><div class="selection-actions"><button id="screen-selected" class="outline-button" type="button" disabled>爆款初筛</button><button id="transcribe-selected" class="primary-button" type="button" disabled>转写所选</button><button id="analyze-selected" class="outline-button" type="button" disabled>深度爆款拆解</button><button id="distill-selected" class="outline-button" type="button" disabled>知识蒸馏</button></div></section>
+          </div>
+        </section>
+        </section>
+
+        <section id="tasks-view" class="view-panel tasks-view" hidden>
+          <div class="view-heading"><div><span class="eyebrow cyan">执行状态</span><h1>任务中心</h1><p>这里展示真实的本地抓取任务、审核结论与下一步操作。</p></div><div class="history-state"><span></span><span id="task-runtime-status">正在读取本地任务状态</span></div></div>
+          <div class="task-summary" aria-label="任务状态筛选"></div>
+          <section class="history-card active-task-list"><div class="card-heading"><div><span class="section-label"><i></i>当前任务</span><h2>任务队列</h2></div><button class="text-button" type="button" data-task-action="查看全部日志">查看全部日志</button></div><div class="task-row"><div class="task-title"><span class="task-kind">目录抓取</span><strong>姜胡说 · 主页增量检查</strong><small>公开主页 · 增量目录 · Chrome Profile 执行位</small></div><div class="task-context"><span>第 9 / 13 页 · 已发现 428 条 · 去重 420 条</span><small>预期产物：<code data-asset-path="raw\\douyin-analysis\\jianghushuo">正在读取本地运行配置...\raw\douyin-analysis\jianghushuo</code></small></div><div class="task-progress"><span><i style="width:68%"></i></span><b>68%</b></div><div class="task-actions"><button class="outline-button" type="button" data-task-action="查看实时日志">实时日志</button><button class="text-button" type="button" data-task-action="取消任务">取消</button></div></div><div class="task-row"><div class="task-title"><span class="task-kind">目录抓取</span><strong>飞天闪客 · 主页全量抓取</strong><small>公开主页 · 全量目录 · 等待唯一执行位</small></div><div class="task-context"><span>队列第 1 位 · 当前等待姜胡说任务结束</span><small>预期产物：<code data-asset-path="raw\\douyin-analysis\\feitianshanke">正在读取本地运行配置...\raw\douyin-analysis\feitianshanke</code></small></div><div class="task-status queued">排队中</div><div class="task-actions"><button class="outline-button" type="button" data-task-action="查看队列">查看队列</button></div></div><div class="task-row"><div class="task-title"><span class="task-kind">JSON 审核</span><strong>示例博主 · 目录审核</strong><small>主页目录 · 86 条作品 · JSON 已生成</small></div><div class="task-context"><span>审核通过 · 原始 JSON 已进入抓取归档</span><small>实际产物：<code data-asset-path="raw\\douyin-analysis\\demo_creator">正在读取本地运行配置...\raw\douyin-analysis\demo_creator</code></small></div><div class="task-status waiting">等待你决定</div><div class="task-actions"><button class="outline-button" type="button" data-task-action="查看 JSON 审核">查看审核</button><button class="primary-button task-primary" type="button" data-task-action="确认下一阶段">确认下一阶段</button><button class="text-button" type="button" data-task-action="暂不处理">暂不处理</button></div></div><div class="task-row"><div class="task-title"><span class="task-kind">目录抓取</span><strong>我的收藏夹 · 目录抓取</strong><small>本人收藏夹 · 上次运行已中断</small></div><div class="task-context"><span>失败原因：抖音登录态失效</span><small>未更新历史索引和增量基线</small></div><div class="task-status failed">需处理</div><div class="task-actions"><button class="outline-button" type="button" data-task-action="查看失败原因">查看原因</button><button class="text-button" type="button" data-task-action="重新登录后重试">重新登录后重试</button></div></div><p id="task-center-note" class="task-center-note">演示状态：真实产品会由本地编排层写入任务、日志和产物引用；页面不会直接执行命令。</p></section>
+        </section>
+
+        <section id="archive-view" class="view-panel history-view" hidden>
+          <div class="view-heading"><div><span class="eyebrow cyan">增量订阅</span><h1>关注与更新</h1><p>关注博主和我的收藏夹分别管理；定期检查只发现新增内容，不会自动消耗转写或模型额度。</p></div><div class="history-state"><span></span><span id="creator-archive-status">正在读取关注规则</span></div></div>
+          <div class="history-overview creator-overview">
+            <article><span>关注来源</span><strong id="archived-creator-count">0</strong><small>博主与收藏夹分别计数</small></article>
+            <article><span>抓取归档</span><strong id="archived-run-count">0</strong><small>按博主保留的历史抓取记录</small></article>
+            <article><span>最新目录作品</span><strong id="archived-work-count">0</strong><small>每位博主最新目录数量之和</small></article>
+            <article><span>已完成转写</span><strong id="archived-transcript-count">0</strong><small>可用于后续分析的文本任务</small></article>
+          </div>
+          <section class="creator-archive-workspace">
+            <aside class="creator-archive-rail"><div class="creator-rail-heading"><span class="section-label"><i></i>关注来源</span><small>博主 / 收藏夹</small></div><div id="creator-archive-list" class="creator-archive-list"><p class="task-center-note">正在加载关注规则...</p></div></aside>
+            <section id="creator-archive-detail" class="creator-archive-detail"><div class="creator-archive-empty"><strong>正在读取关注资产</strong><p>选择左侧来源后，这里展示更新规则、作品目录和历史资产。</p></div></section>
+          </section>
+        </section>
+
+        <section id="breakdown-view" class="view-panel breakdown-view" hidden>
+          <div class="view-heading"><div><span class="eyebrow cyan">分析资产</span><h1>爆款拆解</h1><p>报告只使用已审核目录与已完成的文本材料。每次提交最多 20 条，模型调用前会明确确认。</p></div><button class="outline-button" type="button" data-return-workbench>回到内容工作台</button></div>
+          <section class="breakdown-result">
+            <div class="breakdown-result-head"><div><span class="section-label"><i></i>本次报告</span><h2 id="breakdown-status">尚未生成拆解报告</h2></div><div class="breakdown-head-actions"><code id="breakdown-path">选择已转写作品后，点击“深度爆款拆解”。</code><button id="use-breakdown-for-topics" class="primary-button" type="button" hidden>基于这份报告生成选题</button><button id="open-breakdown-folder" class="outline-button" type="button" hidden>打开报告文件夹</button></div></div>
+            <div id="breakdown-progress" class="breakdown-progress" hidden><span><i></i></span><div><strong>正在创建分析任务</strong><small>等待本地分析执行位</small></div></div>
+            <pre id="breakdown-report" class="breakdown-report" hidden></pre>
+          </section>
+          <section class="history-card breakdown-history"><div class="card-heading"><div><span class="section-label"><i></i>历史报告</span><h2>爆款拆解资产</h2></div><small id="breakdown-history-status">正在读取本地报告索引</small></div><div id="breakdown-history-list" class="breakdown-history-list"><p class="task-center-note">正在加载报告...</p></div></section>
+        </section>
+        <section id="topics-view" class="view-panel intelligence-view" hidden>
+          <div class="view-heading"><div><span class="eyebrow cyan">证据驱动创作</span><h1>选题顾问</h1><p>不是随机生成标题，而是从已完成的爆款拆解中提炼可追溯的用户痛点、开场钩子和内容角度。</p></div><button class="outline-button" type="button" data-return-workbench>回到内容工作台</button></div>
+          <div class="intelligence-overview">
+            <article><span>可用拆解报告</span><strong id="topic-report-count">0</strong><small>已完成且本地文件可读</small></article>
+            <article><span>选题批次</span><strong id="topic-batch-count">0</strong><small>保留每次生成记录</small></article>
+            <article><span>候选选题</span><strong id="topic-candidate-count">0</strong><small>全部带来源证据</small></article>
+          </div>
+          <section class="intelligence-workspace topic-workspace">
+            <aside class="intelligence-rail">
+              <div class="intelligence-panel-head"><div><span class="section-label"><i></i>证据来源</span><h2>选择爆款报告</h2></div><button id="select-all-topic-reports" class="text-button" type="button">全选</button></div>
+              <div id="topic-source-list" class="topic-source-list"><p class="task-center-note">正在读取爆款报告...</p></div>
+              <label class="topic-comparison-control"><input id="topic-comparison-mode" type="checkbox" /><span><strong>跨博主对比模式</strong><small>默认关闭。开启后才允许混合不同博主的报告。</small></span></label>
+              <label class="topic-count-control">本次生成数量<select id="topic-generation-count"><option value="6">6 个</option><option value="12" selected>12 个</option><option value="20">20 个</option></select></label>
+              <button id="generate-topics" class="primary-button intelligence-primary" type="button" disabled>生成证据选题</button>
+              <p class="intelligence-help">成熟做法来自内容反向工程：先看共同规律，再保留每条建议对应的报告和作品 ID。</p>
+            </aside>
+            <section class="intelligence-canvas">
+              <div class="intelligence-panel-head"><div><span class="section-label"><i></i>选题资产</span><h2 id="topic-batch-status">尚未生成选题</h2></div><button id="open-topic-folder" class="outline-button" type="button" hidden>打开选题文件夹</button></div>
+              <div id="topic-generation-progress" class="analysis-live-state" hidden><span><i></i></span><div><strong>选题顾问正在工作</strong><small>读取报告并生成可追溯选题</small></div></div>
+              <p id="topic-positioning" class="topic-positioning">选择一份或多份已完成的爆款拆解报告开始。</p>
+              <div id="topic-card-list" class="topic-card-list"></div>
+              <div class="intelligence-history"><div class="intelligence-panel-head"><div><span class="section-label"><i></i>历史批次</span><h3>最近生成</h3></div></div><div id="topic-batch-history" class="compact-history-list"></div></div>
+            </section>
+          </section>
+        </section>
+        <section id="agent-view" class="view-panel intelligence-view" hidden>
+          <div class="view-heading"><div><span class="eyebrow cyan">知识资产</span><h1>博主智能体</h1><p>以多条真实转写材料生成可审计画像，再用画像审阅新稿；不会用单条作品冒充完整人格。</p></div><button class="outline-button" type="button" data-return-workbench>回到内容工作台</button></div>
+          <div class="intelligence-overview agent-overview">
+            <article><span>可用博主</span><strong id="agent-creator-count">0</strong><small>已有转写材料</small></article>
+            <article><span>可生成画像</span><strong id="agent-ready-count">0</strong><small>至少 5 条代表作</small></article>
+            <article><span>合格画像版本</span><strong id="agent-profile-count">0</strong><small>可以进入稿件审阅</small></article>
+          </div>
+          <section class="intelligence-workspace agent-workspace">
+            <aside class="intelligence-rail creator-material-rail">
+              <div class="intelligence-panel-head"><div><span class="section-label"><i></i>博主材料</span><h2>转写覆盖</h2></div></div>
+              <div id="agent-creator-list" class="agent-creator-list"><p class="task-center-note">正在统计转写材料...</p></div>
+            </aside>
+            <section class="intelligence-canvas agent-canvas">
+              <div id="agent-readiness-card" class="agent-readiness-card"><div><span class="task-status queued">尚未选择</span><h2>选择一位博主查看材料覆盖</h2><p>5 至 9 条可生成试用画像；10 条以上可生成较完整画像。</p></div></div>
+              <div class="agent-action-row"><button id="generate-creator-agent" class="primary-button" type="button" disabled>生成博主智能体</button><button id="open-agent-folder" class="outline-button" type="button" hidden>打开智能体文件夹</button></div>
+              <div id="agent-generation-progress" class="analysis-live-state" hidden><span><i></i></span><div><strong>正在蒸馏博主方法</strong><small>提炼受众、判断框架、表达 DNA 与写稿检查表</small></div></div>
+              <section class="agent-profile-panel"><div class="intelligence-panel-head"><div><span class="section-label"><i></i>智能体画像</span><h2 id="creator-agent-status">尚未生成</h2></div></div><pre id="creator-agent-profile" class="intelligence-report">画像生成后会显示在这里，并保存为本地 Markdown。</pre></section>
+              <section class="draft-review-lab">
+                <div class="intelligence-panel-head"><div><span class="section-label"><i></i>稿件实验室</span><h2>让智能体审阅新稿</h2></div><span id="draft-review-state">需要先生成画像</span></div>
+                <textarea id="draft-review-input" rows="8" placeholder="粘贴准备发布的口播稿。智能体会区分画像证据支持的建议和通用写作建议。"></textarea>
+                <div class="draft-review-actions"><small>不会自动发布或覆盖原稿。</small><button id="review-draft" class="primary-button" type="button" disabled>开始审稿</button></div>
+                <pre id="draft-review-output" class="intelligence-report" hidden></pre>
+              </section>
+            </section>
+          </section>
+          <section class="legacy-pool" hidden><h2 id="distillation-pool-status">素材池</h2><code id="distillation-pool-meta"></code><div id="distillation-pool-list"></div></section>
+        </section>
+        <section id="settings-view" class="view-panel storage-view" hidden>
+          <div class="view-heading"><div><span class="eyebrow cyan">本地设置</span><h1>系统与账号</h1><p>管理平台登录身份、转写通道和本地运行依赖。敏感信息不会显示在页面或写入 Git。</p></div><div id="settings-save-state" class="history-state"><span></span>正在读取配置</div></div>
+          <div class="storage-grid settings-grid">
+            <form id="account-profiles-form" class="history-card storage-card settings-card account-settings-card">
+              <div class="account-settings-head"><div><span class="section-label"><i></i>账号中心</span><h2>两个用途，可共用或独立登录</h2><p>公开主页使用内容采集账号；收藏夹只读取收藏夹账号自己的内容。</p></div><button class="primary-button" type="submit">保存账号绑定</button></div>
+              <div class="account-binding-options">
+                <label class="account-binding-option"><input type="radio" name="favorites-binding" value="shared" /><span><strong>共用账号</strong><small>收藏夹复用内容采集登录态，只需登录一次。</small></span></label>
+                <label class="account-binding-option"><input type="radio" name="favorites-binding" value="independent" /><span><strong>独立账号</strong><small>收藏夹使用自己的 Profile、Cookie 和状态。</small></span></label>
+              </div>
+              <div class="account-role-grid">
+                <article class="account-role-card" data-account-role-card="content"><div class="account-role-icon">采</div><div><span>内容采集账号</span><strong id="content-account-state">正在检查</strong><small id="content-account-meta">用于公开主页与单条作品</small></div><button class="outline-button" type="button" data-account-login="content">打开登录窗口</button></article>
+                <article class="account-role-card" data-account-role-card="favorites"><div class="account-role-icon">藏</div><div><span>收藏夹账号</span><strong id="favorites-account-state">正在检查</strong><small id="favorites-account-meta">可与采集账号共用</small></div><button class="outline-button" type="button" data-account-login="favorites">打开登录窗口</button></article>
+              </div>
+              <p id="account-capability-note" class="task-center-note">收藏夹目录已支持发现和选择式抓取；全量收藏夹数量对账仍需单独回归，不会把未验证结果标记为完整成功。</p>
+            </form>
+            <form id="transcription-settings-form" class="history-card storage-card settings-card">
+              <span class="section-label"><i></i>云端链接提取</span>
+              <label>服务地址<input id="cloud-api-base-url" type="url" required /></label>
+              <label>Client ID<input id="cloud-client-id" type="text" required /></label>
+              <label>API Key<input id="cloud-api-key" type="password" placeholder="留空表示保留现有密钥" /></label>
+              <small id="cloud-key-status">正在检查密钥配置</small>
+              <button class="primary-button" type="submit">保存转写设置</button>
+            </form>
+            <section class="history-card storage-card settings-card">
+              <span class="section-label"><i></i>默认通道</span>
+              <p>每次提交仍会弹窗让用户选择，这里只决定默认建议。</p>
+              <label class="settings-radio"><input type="radio" name="default-provider" value="getnotes" /> 云端链接提取</label>
+              <label class="settings-radio"><input type="radio" name="default-provider" value="whisper" /> 本地 Whisper</label>
+              <p>云端每日参考上限：<strong>100 条</strong>。Whisper 不受该额度限制，但占用本机算力并需要先下载视频。</p>
+            </section>
+            <section class="history-card storage-card settings-card">
+              <span class="section-label"><i></i>本地依赖诊断</span>
+              <div id="runtime-diagnostics" class="runtime-diagnostics">正在检查 FFmpeg、模型和 Python 环境...</div>
+              <code>命令行复核：npm run doctor</code>
+            </section>
+          </div>
+        </section>
+        <section id="storage-view" class="view-panel storage-view" hidden><div class="view-heading"><div><span class="eyebrow cyan">本地设置</span><h1>知识资产目录</h1><p>选择所有抓取证据、文本材料和分析资产的统一保存根目录。</p></div><div class="history-state"><span></span>演示设置，不会读取本机配置</div></div><div class="storage-grid"><section class="history-card storage-card"><span class="section-label"><i></i>当前存储方式</span><h2 id="storage-mode-label">Obsidian 库</h2><p>默认将知识资产沉淀到 Obsidian 可浏览的本地知识库目录。</p><div class="storage-path"><span>资产根目录</span><code data-asset-root>正在读取本地运行配置...</code></div><div class="storage-options"><button class="outline-button is-selected" type="button" data-storage-mode="obsidian">使用 Obsidian 库</button><button class="outline-button" type="button" data-storage-mode="local">使用本地文件夹</button></div><p id="storage-note" class="task-center-note">真实产品会在你选择或迁移目录前说明影响，并要求确认。</p></section><section class="history-card storage-card"><span class="section-label"><i></i>目录预览</span><h2>资产组织方式</h2><pre><code data-asset-root>正在读取本地运行配置...</code>\
+  raw\douyin-analysis\&lt;博主&gt;\
+  get-note\&lt;博主&gt;\
+  analyses\&lt;博主&gt;\
+  topic-library\
+  agents\</pre><p>JSON 是证据层；文本、报告和选题库在后续阶段写入各自目录。</p></section></div></section>
+      </main>
+    </div>
+    <dialog id="favorites-collections-dialog" class="provider-dialog favorites-dialog">
+      <form method="dialog" id="favorites-collections-form">
+        <div class="provider-dialog-head"><span>选择要抓取的收藏夹</span><button value="cancel" aria-label="关闭">×</button></div>
+        <p id="favorites-collections-summary">目录已读取。可选择一个、多个或全部收藏夹；作品会跨收藏夹按 videoId 去重。</p>
+        <label class="collection-select-all"><input id="favorites-select-all" type="checkbox" /> <strong>全选收藏夹</strong></label>
+        <div id="favorites-collections-list" class="favorites-collections-list"></div>
+        <div class="favorites-dialog-actions"><button id="favorites-refresh" value="cancel" class="text-button" type="button">刷新收藏夹目录</button><button value="cancel" class="outline-button" type="submit">取消</button><button id="favorites-confirm" value="default" class="primary-button" type="submit">开始抓取所选收藏夹</button></div>
+      </form>
+    </dialog>
+    <dialog id="transcription-provider-dialog" class="provider-dialog">
+      <form method="dialog">
+        <div class="provider-dialog-head"><span>选择本次转写通道</span><button value="cancel" aria-label="关闭">×</button></div>
+        <p>通道按本次任务选择，不会在失败后静默切换。</p>
+        <button class="provider-option" value="getnotes">
+          <strong>云端链接提取</strong>
+          <span>直接提交抖音链接；保留整理内容、音频原文和附件。每日参考上限 100 条。</span>
+        </button>
+        <button class="provider-option" value="whisper">
+          <strong>本地 Whisper</strong>
+          <span>下载视频后本地识别；生成逐段时间轴、词级时间戳和 SRT，适合爆款结构分析。</span>
+        </button>
+        <small>图文作品只能使用云端链接提取；本地 Whisper 当前按单执行位串行处理。</small>
+      </form>
+    </dialog>
+    <div id="app-toast" class="app-toast" role="status" aria-live="polite" hidden></div>
+    <script src="./app.js"></script>
+  </body>
+</html>
