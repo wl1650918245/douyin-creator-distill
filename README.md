@@ -5,7 +5,7 @@
 <div align="center">
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-58d6f4.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-64dca8.svg)](package.json)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22.5-64dca8.svg)](package.json)
 [![Platform](https://img.shields.io/badge/platform-Windows-6e81e8.svg)](docs/本地转写运行环境.md)
 [![Local First](https://img.shields.io/badge/data-local--first-ed4fa9.svg)](SECURITY.md)
 
@@ -79,7 +79,7 @@ CreatorDistill 将这些步骤拆成独立、可暂停、可复核的本地阶�
 ### 1. 环境要求
 
 - Windows 10/11
-- Node.js 18 或更高版本
+- Node.js 22.5 或更高版本（项目使用内置 `node:sqlite`）
 - Google Chrome
 - Git
 - 可选：FFmpeg、Python、faster-whisper 和本地 Whisper 模型
