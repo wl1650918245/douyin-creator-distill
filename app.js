@@ -704,6 +704,11 @@ transcribeSelected.addEventListener("click", async () => {
   const provider = await chooseTranscriptionProvider();
   if (!provider) return;
   const providerLabel = provider === "whisper" ? "本地 Whisper" : "云端链接提取";
+  if (provider !== "whisper" && count > 100) {
+    selectionNote.textContent = `云端链接提取每次最多提交 100 条；当前已选 ${count} 条，请减少选择或改用本地 Whisper。`;
+    showToast("云端通道最多提交 100 条，本地 Whisper 不限制总数。", "review");
+    return;
+  }
   if (provider === "whisper" && works.some((work) => selectedIds.has(work.id) && work.contentType === "图文")) {
     showToast("本地 Whisper 不能处理图文作品，请改用云端链接提取。", "review");
     return;

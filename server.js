@@ -7,6 +7,7 @@ const { resolveAccountRole } = require("./src/config/account-profiles");
 const { reaudit, submit, submitFavoritesSelection } = require("./src/services/directory-crawl-service");
 const { submit: submitTranscription } = require("./src/services/getnotes-transcription-service");
 const { submit: submitWhisperTranscription } = require("./src/services/local-whisper-transcription-service");
+const { validateTranscriptionRequest } = require("./src/services/transcription-request-policy");
 const {
   addDistillationSources,
   deleteSubscription,
@@ -169,8 +170,8 @@ http.createServer(async (request, response) => {
     }
     if (request.method === "POST" && url.pathname === "/api/transcriptions") {
       const { crawlTaskId, videoIds, provider = "getnotes" } = await readJson(request);
-      if (typeof crawlTaskId !== "string" || !Array.isArray(videoIds) || !videoIds.length || videoIds.length > 100) return json(response, 400, { error: "请选择 1 至 100 条真实作品后再转写" });
-      if (!["getnotes", "whisper"].includes(provider)) return json(response, 400, { error: "不支持的转写通道" });
+      const validationError = validateTranscriptionRequest({ crawlTaskId, videoIds, provider });
+      if (validationError) return json(response, 400, { error: validationError });
       const taskId = provider === "whisper" ? submitWhisperTranscription(crawlTaskId, videoIds) : submitTranscription(crawlTaskId, videoIds);
       return json(response, 202, { taskId, provider });
     }
