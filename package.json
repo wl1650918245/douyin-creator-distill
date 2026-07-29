@@ -24,7 +24,7 @@
     "check": "node --check server.js && node --check app.js && node --check scripts/diagnose-runtime.js && node --check scripts/export-douyin-cookies.js && node --check scripts/run-whisper-smoke.js && node --check scripts/test-account-profiles.js && node --check scripts/test-account-ui.js && node --check scripts/test-favorites-adapter.js && node --check scripts/test-subscriptions.js && node --check scripts/test-transcription-policy.js && node --check scripts/test-intelligence-ui.js && node --check scripts/test-crawl-loop.js && node --check src/config/runtime-config.js && node --check src/config/account-profiles.js && node --check src/config/transcription-config.js && node --check src/services/account-profile-service.js && node --check src/services/task-store.js && node --check src/services/json-audit.js && node --check src/services/crawl-loop-policy.js && node --check src/services/directory-crawl-service.js && node --check src/services/getnotes-transcription-service.js && node --check src/services/local-whisper-transcription-service.js && node --check src/services/transcription-request-policy.js && node --check src/services/subscription-scheduler.js && node --check src/services/transcription-settings-service.js && node --check src/services/viral-breakdown-service.js && node --check src/services/content-intelligence-service.js && node --check src/adapters/douyin/cookie-exporter.js && node --check src/adapters/douyin/profile-crawler.js && node --check src/adapters/douyin/profile-login.js && node --check src/adapters/douyin/favorites-crawler.js"
   },
   "dependencies": {
-    "axios": "^1.7.0",
+    "axios": "^1.18.0",
     "playwright": "^1.50.0"
   },
   "optionalDependencies": {
