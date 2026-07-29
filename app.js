@@ -346,7 +346,7 @@ function taskDisplayName(task) {
   if (task?.summary?.provider === "creator-agent") return task.creator_name || "博主智能体画像";
   if (task?.summary?.provider === "creator-agent-review") return `${task.creator_name || "博主智能体"} · 稿件审阅`;
   if (isViralTask(task)) return task.creator_name || String(task.source || "").replace("爆款拆解 / ", "") || "爆款拆解报告";
-  if (isGetNotesTask(task)) return task.creator_name || String(task.source || "").replace(`${legacyProviderName}转写 / `, "").replace("文本提取 / ", "") || "所选作品";
+  if (isGetNotesTask(task)) return task.creator_name || String(task.source || "").replace(`${legacyProviderName}转写 / `, "").replace("文本提取 / ", "").replace("Whisper转写 / ", "") || "所选作品";
   if (task?.source_mode === "favorites") return "我的收藏夹";
   return task.creator_name || `抖音号：${task.source}`;
 }
@@ -452,19 +452,32 @@ function renderSourceProgress(task) {
     const total = Number(summary.totalCount || 0);
     const completed = Number(summary.completed || 0);
     const failed = Number(summary.failed || 0);
-    const running = task.status === "running" || task.status === "queued";
+    const queued = Number(summary.queued || 0);
+    const running = ["running", "queued", "pausing"].includes(task.status);
+    const paused = task.status === "paused";
     const hasError = task.status === "partial" || task.status === "failed" || task.status === "interrupted_recoverable";
-    const count = hasError ? `失败 ${failed} / ${total} 条` : `完成 ${completed} / ${total} 条`;
+    const count = `完成 ${completed} / ${total} 条${failed ? ` · 失败 ${failed}` : ""}${queued ? ` · 待处理 ${queued}` : ""}`;
     const nextStep = hasError
-      ? "下一步：检查网络或系统代理。网络恢复后，回到作品目录重新选择这条作品提交；系统不会自动重试，也不会自动切换 Whisper。"
+      ? failed
+        ? "成功结果已保留。下一步：到任务中心查看失败原因，并仅重试失败作品。"
+        : "批处理准备失败。修复配置或运行环境后，到任务中心从断点继续。"
+      : paused
+        ? "批处理已安全暂停。下一步：到任务中心点击“从断点继续”。"
       : task.status === "waiting_for_user"
         ? "下一步：已获得转写内容，可在后续版本进入爆款拆解或知识蒸馏。"
-        : "正在提交链接并等待文本提取结果，请保持本地服务运行。";
+        : "正在逐条处理；每条结果都会立即落盘，单项失败不会终止整批。";
     sourceProgress.hidden = false;
-    sourceProgress.classList.toggle("is-review", hasError);
+    sourceProgress.classList.toggle("is-review", hasError || paused);
     sourceProgress.classList.toggle("is-running", running);
     sourceProgress.classList.toggle("is-ready", task.status === "waiting_for_user");
-    updateSourceProgressMarkup(`<div class="source-progress-shell"><div class="progress-orbit" aria-hidden="true"><i></i><b>${hasError ? "!" : running ? "转" : "✓"}</b></div><div class="source-progress-body"><div class="source-progress-header"><span class="live-label"><i class="activity-dot"></i>${hasError ? "连接失败" : running ? "正在转写" : escapeHtml(taskLabel(task.status))}</span><strong>文本提取</strong><code>${escapeHtml(taskDisplayName(task))}</code><small>${escapeHtml(count)}</small></div><p class="source-progress-detail">${escapeHtml(auditDetail(task))}</p><p class="source-progress-next">${escapeHtml(nextStep)}</p></div></div>`);
+    const actions = running && task.status !== "pausing"
+      ? `<div class="source-progress-actions"><button class="progress-action" type="button" data-transcription-pause="${escapeHtml(task.id)}">安全暂停</button></div>`
+      : paused || (task.status === "failed" && queued)
+        ? `<div class="source-progress-actions"><button class="progress-action primary" type="button" data-transcription-resume="${escapeHtml(task.id)}">从断点继续</button></div>`
+        : failed
+          ? `<div class="source-progress-actions"><button class="progress-action primary" type="button" data-transcription-retry="${escapeHtml(task.id)}">重试失败 ${failed} 条</button></div>`
+          : "";
+    updateSourceProgressMarkup(`<div class="source-progress-shell"><div class="progress-orbit" aria-hidden="true"><i></i><b>${hasError ? "!" : paused ? "停" : running ? "转" : "✓"}</b></div><div class="source-progress-body"><div class="source-progress-header"><span class="live-label"><i class="activity-dot"></i>${hasError ? "部分失败" : paused ? "已暂停" : running ? "正在转写" : escapeHtml(taskLabel(task.status))}</span><strong>文本提取</strong><code>${escapeHtml(taskDisplayName(task))}</code><small>${escapeHtml(count)}</small></div><p class="source-progress-detail">${escapeHtml(auditDetail(task))}</p><p class="source-progress-next">${escapeHtml(nextStep)}</p></div>${actions}</div>`);
     return;
   }
   const progress = task.progress || {};
@@ -728,14 +741,20 @@ transcribeSelected.addEventListener("click", async () => {
       const taskResponse = await fetch(`/api/tasks/${payload.taskId}`);
       const task = await taskResponse.json();
       const summary = task.summary || {};
-      if (["queued", "running"].includes(task.status)) {
+      if (["queued", "running", "pausing"].includes(task.status)) {
         selectionNote.textContent = `${providerLabel}处理中：${task.progress?.label || task.phase || "等待进度"}。`;
         window.setTimeout(poll, 1000);
+      } else if (task.status === "paused") {
+        selectionNote.textContent = `${providerLabel}已暂停：完成 ${summary.completed || 0} / ${summary.totalCount || count} 条，可在任务中心从断点继续。`;
+        window.setTimeout(poll, 2000);
       } else if (task.status === "waiting_for_user") {
         selectionNote.textContent = `${providerLabel}完成：${summary.completed || 0} / ${summary.totalCount || count} 条。`;
         showToast(`${providerLabel}完成：${summary.completed || 0} / ${summary.totalCount || count} 条。`, "success");
+      } else if (task.status === "partial") {
+        selectionNote.textContent = `${providerLabel}部分完成：成功 ${summary.completed || 0} 条，失败 ${summary.failed || 0} 条；可在任务中心仅重试失败项。`;
+        showToast(`${providerLabel}已保留成功结果，${summary.failed || 0} 条失败作品可单独重试。`, "review");
       } else {
-        selectionNote.textContent = `${providerLabel}失败：${taskFailureDetail(task)}。请查看任务日志后重新提交。`;
+        selectionNote.textContent = `${providerLabel}批处理准备失败：${taskFailureDetail(task)}。修复后可在任务中心从断点继续。`;
         showToast(`${providerLabel}失败：${taskFailureDetail(task)}`, "review");
       }
       refreshRuntimeViews();
@@ -937,12 +956,12 @@ function renderStorageLocation() {
 }
 function escapeHtml(value) { return scrubProviderName(value).replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[character]); }
 function formatTime(value) { return value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "-"; }
-function taskLabel(status) { return ({ queued: "排队中", running: "处理中", waiting_for_action: "等待人工处理", waiting_for_user: "可选择作品", partial: "待复核", failed: "任务失败", interrupted_recoverable: "服务中断" })[status] || status; }
-function taskStatusLabel(task) { return isAnalysisTask(task) && task.status === "waiting_for_user" ? "分析完成" : isAnalysisTask(task) && task.status === "failed" ? "分析失败" : isGetNotesTask(task) && task.status === "waiting_for_user" ? "转写已完成" : taskLabel(task.status); }
+function taskLabel(status) { return ({ queued: "排队中", running: "处理中", pausing: "正在暂停", paused: "已暂停", waiting_for_action: "等待人工处理", waiting_for_user: "可选择作品", partial: "待复核", failed: "任务失败", interrupted_recoverable: "服务中断" })[status] || status; }
+function taskStatusLabel(task) { return isAnalysisTask(task) && task.status === "waiting_for_user" ? "分析完成" : isAnalysisTask(task) && task.status === "failed" ? "分析失败" : isGetNotesTask(task) && task.status === "waiting_for_user" ? "转写已完成" : isGetNotesTask(task) && task.status === "partial" ? "部分完成" : taskLabel(task.status); }
 function matchesTaskFilter(task, filter) {
   if (!filter) return true;
-  if (filter === "active") return ["queued", "running"].includes(task.status);
-  if (filter === "action") return task.status === "waiting_for_action";
+  if (filter === "active") return ["queued", "running", "pausing"].includes(task.status);
+  if (filter === "action") return ["waiting_for_action", "paused"].includes(task.status);
   if (filter === "review") return task.status === "partial";
   if (filter === "failed") return ["failed", "interrupted_recoverable"].includes(task.status);
   if (filter === "ready") return task.status === "waiting_for_user";
@@ -956,9 +975,19 @@ function matchesTaskType(task, filter) {
   return true;
 }
 function taskFilterLabel(filter) { return ({ active: "进行中", action: "需处理", review: "待复核", failed: "失败", ready: "产物就绪" })[filter] || "全部"; }
-function taskClass(status) { return ({ queued: "queued", waiting_for_action: "review", waiting_for_user: "ready", partial: "review", failed: "failed", interrupted_recoverable: "failed" })[status] || ""; }
+function taskClass(status) { return ({ queued: "queued", pausing: "review", paused: "paused", waiting_for_action: "review", waiting_for_user: "ready", partial: "review", failed: "failed", interrupted_recoverable: "failed" })[status] || ""; }
 function progressText(task) { const progress = task.progress || {}; const counts = progress.discovered != null ? `${progress.discovered}${progress.expectedTotal ? ` / ${progress.expectedTotal}` : ""} 条` : ""; return scrubProviderName([progress.label || task.phase, progress.detail, counts].filter(Boolean).join(" · ")); }
 function taskLogTail(task) { return scrubProviderName(String(task.log || "").split(/\r?\n/).filter(Boolean).slice(-20).join("\n")); }
+function transcriptionTaskActions(task) {
+  const summary = task.summary || {};
+  const actions = [];
+  if (["queued", "running"].includes(task.status)) actions.push(`<button type="button" data-transcription-pause="${escapeHtml(task.id)}">暂停</button>`);
+  if (task.status === "pausing") actions.push('<button type="button" disabled>当前作品结束后暂停</button>');
+  if (task.status === "paused" || (task.status === "failed" && Number(summary.queued || 0) > 0)) actions.push(`<button type="button" data-transcription-resume="${escapeHtml(task.id)}">从断点继续</button>`);
+  if (Number(summary.failed || 0) > 0) actions.push(`<button type="button" data-transcription-retry="${escapeHtml(task.id)}">重试失败 ${formatNumber(summary.failed)} 条</button>`);
+  if (Number(summary.completed || 0) > 0 && ["waiting_for_user", "partial", "paused", "failed"].includes(task.status)) actions.push(`<button type="button" data-task-open-transcripts="${escapeHtml(task.id)}">打开转写文件夹</button>`);
+  return actions.join("");
+}
 function mapWork(work) {
   const likes = Number(work.likes || 0); const comments = Number(work.commentCount || 0); const collects = Number(work.collectCount || 0); const shares = Number(work.shareCount || 0);
   const id = String(work.videoId); const isImage = work.hasImages || work.contentType === "image"; const titleMissing = !String(work.title || "").trim();
@@ -1038,7 +1067,7 @@ function sourceProgressTask(tasks) {
   const currentTask = tasks.find((task) => task.id === activeSourceTaskId);
   if (currentTask) return currentTask;
   return tasks.find((task) => isDirectoryTask(task) && ["queued", "running"].includes(task.status))
-    || tasks.find((task) => isGetNotesTask(task) && ["queued", "running"].includes(task.status))
+    || tasks.find((task) => isGetNotesTask(task) && ["queued", "running", "pausing", "paused"].includes(task.status))
     || tasks.find((task) => isDirectoryTask(task))
     || null;
 }
@@ -1107,11 +1136,11 @@ async function refreshRuntimeViews() {
     renderSourceProgress(sourceProgressTask(tasks));
     await refreshTranscriptStates();
     await refreshViralReports();
-    const active = tasks.filter((task) => ["queued", "running", "waiting_for_action", "waiting_for_user", "partial", "failed", "interrupted_recoverable"].includes(task.status));
+    const active = tasks.filter((task) => ["queued", "running", "pausing", "paused", "waiting_for_action", "waiting_for_user", "partial", "failed", "interrupted_recoverable"].includes(task.status));
     const visibleTasks = active.filter((task) => matchesTaskFilter(task, taskStatusFilter) && matchesTaskType(task, taskTypeFilter));
     const taskCard = document.querySelector(".active-task-list"); const taskSummary = document.querySelector(".task-summary");
     taskCard.querySelectorAll("details[open][data-task-log]").forEach((details) => openTaskLogs.add(details.dataset.taskLog));
-    taskRuntimeStatus.textContent = tasks.some((task) => ["queued", "running"].includes(task.status)) ? "本地任务正在执行" : "本地任务状态已同步";
+    taskRuntimeStatus.textContent = tasks.some((task) => ["queued", "running", "pausing"].includes(task.status)) ? "本地任务正在执行" : tasks.some((task) => task.status === "paused") ? "有批处理已暂停" : "本地任务状态已同步";
     const statusFilters = [["", "全部"], ["active", "进行中"], ["action", "需处理"], ["review", "待复核"], ["failed", "失败"], ["ready", "产物就绪"]];
     const typeFilters = [["", "全部类型"], ["directory", "目录抓取"], ["transcription", "文本转写"], ["analysis", "内容分析"]];
     taskSummary.innerHTML = `<div class="task-status-filters">${statusFilters.map(([filter, label]) => `<button type="button" class="task-summary-card${taskStatusFilter === filter ? " is-active" : ""}" data-task-status-filter="${filter}" aria-pressed="${taskStatusFilter === filter}"><span>${label}</span><strong>${active.filter((task) => matchesTaskFilter(task, filter)).length}</strong></button>`).join("")}</div><div class="task-type-filters"><span>任务类型</span>${typeFilters.map(([filter, label]) => `<button type="button" class="${taskTypeFilter === filter ? "is-active" : ""}" data-task-type-filter="${filter}">${label}</button>`).join("")}</div>`;
@@ -1124,7 +1153,7 @@ async function refreshRuntimeViews() {
       const summary = task.summary || {};
       const inferredCompletedCount = isDirectoryTask(task) && task.status === "waiting_for_user" ? Number(summary.totalCount || 0) : 0;
       const discovered = progress.discovered ?? (inferredCompletedCount || null); const expectedTotal = progress.expectedTotal ?? (inferredCompletedCount || null);
-      const countText = task.status === "waiting_for_action" ? "已暂停，不再继续请求" : analysisTask ? task.status === "waiting_for_user" ? `产物完成 · ${summary.totalCount || 0} 条证据` : task.status === "failed" ? "分析产物未生成" : `${summary.totalCount || 0} 条证据处理中` : getNotesTask ? `完成 ${summary.completed || 0} / ${summary.totalCount || 0} 条${summary.failed ? `，失败 ${summary.failed} 条` : ""}` : discovered != null ? `${discovered}${expectedTotal ? ` / ${expectedTotal}` : ""} 条` : summary.totalCount ? `${summary.totalCount} 条` : "尚未收到进度";
+      const countText = task.status === "waiting_for_action" ? "已暂停，不再继续请求" : analysisTask ? task.status === "waiting_for_user" ? `产物完成 · ${summary.totalCount || 0} 条证据` : task.status === "failed" ? "分析产物未生成" : `${summary.totalCount || 0} 条证据处理中` : getNotesTask ? `完成 ${summary.completed || 0} / ${summary.totalCount || 0} 条${summary.failed ? ` · 失败 ${summary.failed}` : ""}${summary.queued ? ` · 待处理 ${summary.queued}` : ""}` : discovered != null ? `${discovered}${expectedTotal ? ` / ${expectedTotal}` : ""} 条` : summary.totalCount ? `${summary.totalCount} 条` : "尚未收到进度";
       const log = taskLogTail(task);
       const events = (task.progressHistory || []).slice(-4);
       const analysisProgress = ({ queued: 6, loading_evidence: 28, requesting_model: 68, completed: 100 })[progress.stage || task.status] || 0;
@@ -1136,7 +1165,7 @@ async function refreshRuntimeViews() {
       const logOpen = openTaskLogs.has(task.id) ? " open" : "";
       const favoritesDiscovery = isFavoritesDiscoveryTask(task);
       const intelligenceAction = intelligenceTask && task.status === "waiting_for_user" ? `<button type="button" data-task-open-intelligence="${escapeHtml(summary.provider || "")}" data-artifact-id="${escapeHtml(summary.batchId || summary.agentId || summary.reviewId || "")}">查看产物</button>` : "";
-      const actions = viralTask ? task.status === "waiting_for_user" ? `<button type="button" data-task-open-report="${escapeHtml(summary.reportId || "")}">查看报告</button><button type="button" data-task-rerun-analysis="${escapeHtml(task.id)}">重新拆解</button>` : task.status === "failed" || task.status === "interrupted_recoverable" ? `<button type="button" data-task-rerun-analysis="${escapeHtml(task.id)}">重新拆解</button>` : "" : intelligenceTask ? intelligenceAction : getNotesTask ? task.status === "waiting_for_user" ? `<button type="button" data-task-open-transcripts="${escapeHtml(task.id)}">打开转写文件夹</button>` : "" : task.status === "waiting_for_action" ? `<button type="button" data-task-account-settings>处理账号问题</button><button type="button" data-task-refetch="${escapeHtml(task.source)}">回工作台</button>` : favoritesDiscovery && task.status === "waiting_for_user" ? `<button type="button" data-task-favorites-choose="${escapeHtml(task.id)}">选择收藏夹</button>` : task.status === "partial" ? `<button type="button" data-task-reaudit="${escapeHtml(task.id)}">重新审核 JSON</button><button type="button" data-task-open="${escapeHtml(task.id)}" data-task-status="${escapeHtml(task.status)}" data-task-source="${escapeHtml(task.source)}">查看待复核目录</button><button type="button" data-task-refetch="${escapeHtml(task.source)}">重新抓取</button>` : task.status === "waiting_for_user" ? `<button type="button" data-task-open="${escapeHtml(task.id)}" data-task-status="${escapeHtml(task.status)}" data-task-source="${escapeHtml(task.source)}">打开作品目录</button>` : task.status === "failed" || task.status === "interrupted_recoverable" ? `<button type="button" data-task-refetch="${escapeHtml(task.source)}">回工作台重试</button>` : "";
+      const actions = viralTask ? task.status === "waiting_for_user" ? `<button type="button" data-task-open-report="${escapeHtml(summary.reportId || "")}">查看报告</button><button type="button" data-task-rerun-analysis="${escapeHtml(task.id)}">重新拆解</button>` : task.status === "failed" || task.status === "interrupted_recoverable" ? `<button type="button" data-task-rerun-analysis="${escapeHtml(task.id)}">重新拆解</button>` : "" : intelligenceTask ? intelligenceAction : getNotesTask ? transcriptionTaskActions(task) : task.status === "waiting_for_action" ? `<button type="button" data-task-account-settings>处理账号问题</button><button type="button" data-task-refetch="${escapeHtml(task.source)}">回工作台</button>` : favoritesDiscovery && task.status === "waiting_for_user" ? `<button type="button" data-task-favorites-choose="${escapeHtml(task.id)}">选择收藏夹</button>` : task.status === "partial" ? `<button type="button" data-task-reaudit="${escapeHtml(task.id)}">重新审核 JSON</button><button type="button" data-task-open="${escapeHtml(task.id)}" data-task-status="${escapeHtml(task.status)}" data-task-source="${escapeHtml(task.source)}">查看待复核目录</button><button type="button" data-task-refetch="${escapeHtml(task.source)}">重新抓取</button>` : task.status === "waiting_for_user" ? `<button type="button" data-task-open="${escapeHtml(task.id)}" data-task-status="${escapeHtml(task.status)}" data-task-source="${escapeHtml(task.source)}">打开作品目录</button>` : task.status === "failed" || task.status === "interrupted_recoverable" ? `<button type="button" data-task-refetch="${escapeHtml(task.source)}">回工作台重试</button>` : "";
       const logName = analysisTask ? "分析" : getNotesTask ? "转写" : "抓取";
       const accountContext = taskAccountContext(task);
       const loopLabel = loopAttemptLabel(task);
@@ -1167,6 +1196,23 @@ async function reauditTask(taskId) {
     showToast(task.status === "waiting_for_user" ? `现有 JSON 已重新审核，可继续处理；${task.summary?.warningCount || 0} 条元数据警告已保留。` : "重新审核完成，仍存在阻断问题，请查看待复核说明。", task.status === "waiting_for_user" ? "success" : "review");
   } catch (error) { showToast(`重新审核失败：${scrubProviderName(error.message)}`, "review"); }
 }
+async function controlTranscriptionBatch(taskId, action) {
+  const messages = {
+    pause: ["正在安全暂停，当前作品完成后停止取下一条。", "review"],
+    resume: ["已从 SQLite 断点继续批处理。", "success"],
+    "retry-failed": ["失败作品已重新加入队列，成功作品不会重复处理。", "success"],
+  };
+  try {
+    const response = await fetch(`/api/transcription-batches/${encodeURIComponent(taskId)}/${action}`, { method: "POST" });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "批处理操作失败");
+    showToast(...messages[action]);
+    lastTaskRenderSignature = "";
+    await refreshRuntimeViews();
+  } catch (error) {
+    showToast(scrubProviderName(error.message), "review");
+  }
+}
 document.querySelector(".active-task-list").addEventListener("toggle", (event) => {
   if (!(event.target instanceof HTMLDetailsElement) || !event.target.matches("[data-task-log]")) return;
   const taskId = event.target.dataset.taskLog;
@@ -1178,6 +1224,12 @@ sourceProgress.addEventListener("click", async (event) => {
   const reauditButton = event.target.closest("[data-source-reaudit]");
   const chooseButton = event.target.closest("[data-favorites-choose]");
   const accountButton = event.target.closest("[data-source-account-settings]");
+  const pauseButton = event.target.closest("[data-transcription-pause]");
+  const resumeButton = event.target.closest("[data-transcription-resume]");
+  const retryButton = event.target.closest("[data-transcription-retry]");
+  if (pauseButton) await controlTranscriptionBatch(pauseButton.dataset.transcriptionPause, "pause");
+  if (resumeButton) await controlTranscriptionBatch(resumeButton.dataset.transcriptionResume, "resume");
+  if (retryButton) await controlTranscriptionBatch(retryButton.dataset.transcriptionRetry, "retry-failed");
   if (openButton) await showTaskDirectory(openButton.dataset.sourceOpen, openButton.dataset.sourceStatus, openButton.dataset.sourceValue);
   if (refetchButton) prepareTaskRefetch(refetchButton.dataset.sourceRefetch);
   if (reauditButton) await reauditTask(reauditButton.dataset.sourceReaudit);
@@ -1197,6 +1249,12 @@ document.querySelector(".active-task-list").addEventListener("click", async (eve
   const rerunButton = event.target.closest("[data-task-rerun-analysis]");
   const reauditButton = event.target.closest("[data-task-reaudit]");
   const accountButton = event.target.closest("[data-task-account-settings]");
+  const pauseButton = event.target.closest("[data-transcription-pause]");
+  const resumeButton = event.target.closest("[data-transcription-resume]");
+  const retryButton = event.target.closest("[data-transcription-retry]");
+  if (pauseButton) await controlTranscriptionBatch(pauseButton.dataset.transcriptionPause, "pause");
+  if (resumeButton) await controlTranscriptionBatch(resumeButton.dataset.transcriptionResume, "resume");
+  if (retryButton) await controlTranscriptionBatch(retryButton.dataset.transcriptionRetry, "retry-failed");
   if (favoritesChooseButton) { const task = latestTasksById.get(favoritesChooseButton.dataset.taskFavoritesChoose); if (task) await openFavoritesCollections(task); }
   if (openButton) await showTaskDirectory(openButton.dataset.taskOpen, openButton.dataset.taskStatus, openButton.dataset.taskSource);
   if (refetchButton) prepareTaskRefetch(refetchButton.dataset.taskRefetch);

@@ -3,13 +3,12 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { getAccountGetNotesDir, ensureDir, sanitizeAccountSlug } = require("../config/runtime-config");
-const { appendLog, createTask, createTranscriptJob, getTask, listTranscriptJobs, updateTask, updateTranscriptJob } = require("./task-store");
+const { appendLog, createTask, createTranscriptJob, getTask, listTranscriptJobs, updateTranscriptJob } = require("./task-store");
+const { createTranscriptionBatchOrchestrator } = require("./transcription-batch-orchestrator");
 const { buildWorkAssetStem } = require("./transcript-naming");
 
 const TEXT_EXTRACTION_CONFIG_PATH = path.resolve(__dirname, "../../config/text-extraction.config.json");
 
-const queue = [];
-let active = false;
 let lastRequestAt = 0;
 
 function delay(milliseconds) { return new Promise((resolve) => setTimeout(resolve, milliseconds)); }
@@ -81,29 +80,50 @@ function saveNote(crawlTask, job, note) {
   fs.writeFileSync(outputPath, body, "utf8"); return outputPath;
 }
 async function processJob(crawlTask, taskId, job) {
-  updateTranscriptJob(job.id, { status: "running" }); appendLog(taskId, `开始 Get笔记解析：${job.video_id}`);
-  try {
+  appendLog(taskId, `开始云端链接解析：${job.video_id}`);
+  let providerTaskId = String(job.provider_task_id || "");
+  let directNoteId = String(job.note_id || "");
+  if (!providerTaskId && !directNoteId) {
     const created = await apiRequest("POST", "/resource/note/save", undefined, { note_type: "link", link_url: job.video_url });
-    const providerTaskId = created.task_id || created.tasks?.[0]?.task_id || ""; const directNoteId = created.note_id || "";
-    const { noteId, note } = await waitForNote(providerTaskId, directNoteId);
-    const outputPath = saveNote(crawlTask, { ...job, provider_task_id: String(providerTaskId || "") }, note);
-    updateTranscriptJob(job.id, { status: hasContent(note) ? "completed" : "partial", note_id: noteId, provider_task_id: String(providerTaskId || ""), output_path: outputPath });
-    appendLog(taskId, `完成 Get笔记解析：${job.video_id}`);
-  } catch (error) { updateTranscriptJob(job.id, { status: "failed", error_message: error.message }); appendLog(taskId, `失败：${job.video_id} - ${error.message}`); }
+    providerTaskId = String(created.task_id || created.tasks?.[0]?.task_id || "");
+    directNoteId = String(created.note_id || "");
+    updateTranscriptJob(job.id, { provider_task_id: providerTaskId, note_id: directNoteId || null });
+  }
+  const { noteId, note } = await waitForNote(providerTaskId, directNoteId);
+  const outputPath = saveNote(crawlTask, { ...job, provider_task_id: String(providerTaskId || "") }, note);
+  if (!hasContent(note)) throw new Error(`作品 ${job.video_id} 未返回可用文本内容`);
+  updateTranscriptJob(job.id, { status: "completed", note_id: noteId, provider_task_id: String(providerTaskId || ""), output_path: outputPath, error_message: null });
+  appendLog(taskId, `完成云端链接解析：${job.video_id}`);
 }
-async function run(item) {
-  const crawlTask = getTask(item.crawlTaskId); updateTask(item.taskId, { status: "running", phase: "Get笔记链接解析中" });
-  for (const job of listTranscriptJobs(item.crawlTaskId).filter((entry) => entry.task_id === item.taskId)) await processJob(crawlTask, item.taskId, job);
-  const jobs = listTranscriptJobs(item.crawlTaskId).filter((entry) => entry.task_id === item.taskId); const completed = jobs.filter((entry) => entry.status === "completed").length; const failed = jobs.filter((entry) => entry.status === "failed").length;
-  updateTask(item.taskId, { status: failed ? "partial" : "waiting_for_user", phase: failed ? "Get笔记转写失败，未自动切换 Whisper" : "转写完成，等待你确认分析", summary_json: JSON.stringify({ totalCount: jobs.length, completed, failed, provider: "getnotes" }), error_message: failed ? `${failed} 条 Get笔记解析失败，未自动重试；Whisper 备用链尚未接入。` : null });
-}
-function pump() { if (active || !queue.length) return; active = true; const item = queue.shift(); run(item).catch((error) => updateTask(item.taskId, { status: "failed", phase: "转写任务失败", error_message: error.message })).finally(() => { active = false; pump(); }); }
+
+const orchestrator = createTranscriptionBatchOrchestrator({
+  provider: "getnotes",
+  runningPhase: "云端链接全量批处理中",
+  completedPhase: "云端链接全量转写完成",
+  partialPhase: "云端链接部分失败，已保留成功结果",
+  prepare({ crawlTaskId }) {
+    const crawlTask = getTask(crawlTaskId);
+    if (!crawlTask?.output_path || !fs.existsSync(crawlTask.output_path)) throw new Error("原始 JSON 不存在，无法继续转写");
+    return { crawlTask };
+  },
+  async processJob({ taskId, job, context }) {
+    await processJob(context.crawlTask, taskId, job);
+  },
+});
+
 function submit(crawlTaskId, videoIds) {
   const crawlTask = getTask(crawlTaskId); if (!crawlTask?.output_path || !fs.existsSync(crawlTask.output_path)) throw new Error("未找到已审核的 JSON，不能创建转写任务。");
   const data = JSON.parse(fs.readFileSync(crawlTask.output_path, "utf8")); const selected = new Set(videoIds.map(String)); const works = (data.works || []).filter((work) => selected.has(String(work.videoId)) && /^https?:\/\//.test(work.videoUrl || ""));
   if (!works.length) throw new Error("未选择有效的真实作品链接。");
   const taskId = crypto.randomUUID(); createTask(taskId, `Get笔记转写 / ${crawlTask.source}`, { sourceMode: crawlTask.source_mode || "profile", accountRole: crawlTask.account_role || "content", profileId: crawlTask.profile_id || null }); updateTask(taskId, { status: "queued", phase: "等待 Get笔记执行位", creator_name: crawlTask.creator_name || works.find((work) => work.authorNickname)?.authorNickname || "", summary_json: JSON.stringify({ totalCount: works.length, provider: "getnotes" }) });
   works.forEach((work) => createTranscriptJob({ id: crypto.randomUUID(), taskId, crawlTaskId, videoId: String(work.videoId), videoUrl: work.videoUrl, title: work.title || `未命名${work.hasImages || work.contentType === "image" ? "图文" : "视频"} · ${work.videoId}`, provider: "getnotes" }));
-  queue.push({ taskId, crawlTaskId }); pump(); return taskId;
+  orchestrator.enqueue(taskId, crawlTaskId); return taskId;
 }
-module.exports = { listTranscriptJobs, submit };
+module.exports = {
+  listTranscriptJobs,
+  pause: orchestrator.pause,
+  recoverPending: orchestrator.recoverPending,
+  resume: orchestrator.resume,
+  retryFailed: orchestrator.retryFailed,
+  submit,
+};

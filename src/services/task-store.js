@@ -22,6 +22,9 @@ try { db.exec("ALTER TABLE tasks ADD COLUMN creator_name TEXT"); } catch (error)
 try { db.exec("ALTER TABLE transcript_jobs ADD COLUMN raw_output_path TEXT"); } catch (error) { if (!String(error.message).includes("duplicate column")) throw error; }
 try { db.exec("ALTER TABLE transcript_jobs ADD COLUMN srt_output_path TEXT"); } catch (error) { if (!String(error.message).includes("duplicate column")) throw error; }
 try { db.exec("ALTER TABLE transcript_jobs ADD COLUMN manifest_path TEXT"); } catch (error) { if (!String(error.message).includes("duplicate column")) throw error; }
+try { db.exec("ALTER TABLE transcript_jobs ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0"); } catch (error) { if (!String(error.message).includes("duplicate column")) throw error; }
+try { db.exec("ALTER TABLE transcript_jobs ADD COLUMN max_attempts INTEGER NOT NULL DEFAULT 3"); } catch (error) { if (!String(error.message).includes("duplicate column")) throw error; }
+try { db.exec("ALTER TABLE transcript_jobs ADD COLUMN last_started_at TEXT"); } catch (error) { if (!String(error.message).includes("duplicate column")) throw error; }
 try { db.exec("ALTER TABLE tasks ADD COLUMN source_mode TEXT"); } catch (error) { if (!String(error.message).includes("duplicate column")) throw error; }
 try { db.exec("ALTER TABLE tasks ADD COLUMN account_role TEXT"); } catch (error) { if (!String(error.message).includes("duplicate column")) throw error; }
 try { db.exec("ALTER TABLE tasks ADD COLUMN profile_id TEXT"); } catch (error) { if (!String(error.message).includes("duplicate column")) throw error; }
@@ -60,7 +63,14 @@ function repairWhisperProgressEncoding() {
 }
 
 repairWhisperProgressEncoding();
-db.prepare("UPDATE tasks SET status='interrupted_recoverable', phase='服务重启中断', updated_at=? WHERE status IN ('queued','running')").run(new Date().toISOString());
+const startupTime = new Date().toISOString();
+db.prepare("UPDATE transcript_jobs SET status='queued', error_message='服务重启后将从该作品继续', updated_at=? WHERE status='running'").run(startupTime);
+db.prepare(`UPDATE tasks SET status='queued', phase='服务重启后等待断点继续', updated_at=?
+  WHERE status IN ('queued','running')
+    AND EXISTS (SELECT 1 FROM transcript_jobs WHERE transcript_jobs.task_id=tasks.id)`).run(startupTime);
+db.prepare(`UPDATE tasks SET status='interrupted_recoverable', phase='服务重启中断', updated_at=?
+  WHERE status IN ('queued','running')
+    AND NOT EXISTS (SELECT 1 FROM transcript_jobs WHERE transcript_jobs.task_id=tasks.id)`).run(startupTime);
 db.prepare("UPDATE viral_reports SET status='failed', error_message='服务重启中断，请重新提交拆解任务', updated_at=? WHERE status IN ('queued','running')").run(new Date().toISOString());
 db.prepare("UPDATE topic_batches SET status='failed', error_message='服务重启中断，请重新生成选题', updated_at=? WHERE status IN ('queued','running')").run(new Date().toISOString());
 db.prepare("UPDATE creator_agents SET status='failed', error_message='服务重启中断，请重新生成智能体', updated_at=? WHERE status IN ('queued','running')").run(new Date().toISOString());
@@ -127,7 +137,30 @@ function createTranscriptJob(job) { const time = now(); db.prepare("INSERT INTO 
 function updateTranscriptJob(id, fields) { const entries = Object.entries({ ...fields, updated_at: now() }); const sets = entries.map(([key]) => `${key}=?`).join(", "); db.prepare(`UPDATE transcript_jobs SET ${sets} WHERE id=?`).run(...entries.map(([, value]) => value), id); return getTranscriptJob(id); }
 function getTranscriptJob(id) { return db.prepare("SELECT * FROM transcript_jobs WHERE id=?").get(id) || null; }
 function listTranscriptJobs(crawlTaskId) { const sql = crawlTaskId ? "SELECT * FROM transcript_jobs WHERE crawl_task_id=? ORDER BY created_at DESC" : "SELECT * FROM transcript_jobs ORDER BY created_at DESC LIMIT 500"; return crawlTaskId ? db.prepare(sql).all(crawlTaskId) : db.prepare(sql).all(); }
-function listTranscriptJobsForTask(taskId) { return db.prepare("SELECT * FROM transcript_jobs WHERE task_id=? ORDER BY created_at DESC").all(taskId); }
+function listTranscriptJobsForTask(taskId) { return db.prepare("SELECT * FROM transcript_jobs WHERE task_id=? ORDER BY created_at ASC").all(taskId); }
+function listRecoverableTranscriptTasks(provider) {
+  return db.prepare(`SELECT DISTINCT tasks.* FROM tasks
+    JOIN transcript_jobs ON transcript_jobs.task_id=tasks.id
+    WHERE transcript_jobs.provider=? AND tasks.status='queued'
+      AND transcript_jobs.status IN ('queued','running')
+    ORDER BY tasks.created_at ASC`).all(provider).map(hydrateTask);
+}
+function retryTranscriptJobs(taskId) {
+  const jobs = listTranscriptJobsForTask(taskId);
+  const retryable = jobs.filter((job) => ["failed", "partial"].includes(job.status));
+  const statement = db.prepare(`UPDATE transcript_jobs
+    SET status='queued', error_message=NULL, max_attempts=attempt_count+3, updated_at=?
+    WHERE id=?`);
+  const time = now();
+  retryable.forEach((job) => statement.run(time, job.id));
+  return retryable.length;
+}
+function resetInterruptedTranscriptJobs(taskId) {
+  db.prepare(`UPDATE transcript_jobs
+    SET status='queued', error_message='服务重启后将从该作品继续', updated_at=?
+    WHERE task_id=? AND status='running'`).run(now(), taskId);
+  return listTranscriptJobsForTask(taskId);
+}
 function addDistillationSources(crawlTaskId, videoIds) { const statement = db.prepare("INSERT OR IGNORE INTO distillation_sources (crawl_task_id,video_id,created_at) VALUES (?,?,?)"); const time = now(); for (const videoId of videoIds) statement.run(crawlTaskId, String(videoId), time); return listDistillationSources(crawlTaskId); }
 function listDistillationSources(crawlTaskId) { return db.prepare("SELECT * FROM distillation_sources WHERE crawl_task_id=? ORDER BY created_at DESC").all(crawlTaskId); }
 function hydrateViralReport(row) { return row ? { ...row, workIds: JSON.parse(row.work_ids_json || "[]"), metadata: row.metadata_json ? JSON.parse(row.metadata_json) : null } : null; }
@@ -333,6 +366,7 @@ module.exports = {
   listTopicBatches,
   listTranscriptJobs,
   listTranscriptJobsForTask,
+  listRecoverableTranscriptTasks,
   listViralReports,
   markSubscriptionStarted,
   saveFavoritesDirectoryCache,
@@ -346,4 +380,6 @@ module.exports = {
   updateTranscriptJob,
   updateViralReport,
   upsertSubscriptionFromTask,
+  resetInterruptedTranscriptJobs,
+  retryTranscriptJobs,
 };

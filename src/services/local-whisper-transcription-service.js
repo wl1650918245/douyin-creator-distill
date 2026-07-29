@@ -16,11 +16,10 @@ const {
   createTask,
   createTranscriptJob,
   getTask,
-  listTranscriptJobsForTask,
-  updateTask,
   updateTaskProgress,
   updateTranscriptJob,
 } = require("./task-store");
+const { createTranscriptionBatchOrchestrator } = require("./transcription-batch-orchestrator");
 const { buildWorkAssetStem } = require("./transcript-naming");
 
 const PROJECT_ROOT = path.resolve(__dirname, "../..");
@@ -28,9 +27,6 @@ const PYTHON_PATH = path.join(PROJECT_ROOT, "runtime", "python", ".venv", "Scrip
 const WHISPER_WORKER = path.join(PROJECT_ROOT, "scripts", "whisper_worker.py");
 const FFMPEG_PATH = path.join(PROJECT_ROOT, "runtime", "bin", "ffmpeg", "ffmpeg.exe");
 const MODEL_PATH = path.join(PROJECT_ROOT, "runtime", "models", "faster-whisper-small");
-
-const queue = [];
-let active = false;
 
 function runProcess(executable, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -184,7 +180,6 @@ async function transcribeMedia(taskId, job, crawlTask, work, mediaPath, destinat
 }
 
 async function processJob(taskId, crawlTask, work, job, cookiesPath) {
-  updateTranscriptJob(job.id, { status: "running", error_message: null });
   appendLog(taskId, `开始本地 Whisper 转写：${job.video_id}`);
   const account = sanitizeAccountSlug(crawlTask.source.split("/").at(-1) || "unknown-account");
   const destinationDir = path.join(getAccountTranscriptDir(account), buildWorkAssetStem(work));
@@ -207,11 +202,9 @@ async function processJob(taskId, crawlTask, work, job, cookiesPath) {
       raw_output_path: result.json_path,
       srt_output_path: result.srt_path,
       manifest_path: manifestPath,
+      error_message: null,
     });
     appendLog(taskId, `完成本地 Whisper 转写：${job.video_id}`);
-  } catch (error) {
-    updateTranscriptJob(job.id, { status: "failed", error_message: error.message });
-    appendLog(taskId, `本地 Whisper 转写失败：${job.video_id} - ${error.message}`);
   } finally {
     const config = loadTranscriptionConfig();
     if (downloaded?.downloadDir && !config.whisper.retainDownloadedMedia) {
@@ -220,48 +213,31 @@ async function processJob(taskId, crawlTask, work, job, cookiesPath) {
   }
 }
 
-async function run(item) {
+async function prepareBatch(item) {
   assertRuntime();
   const crawlTask = getTask(item.crawlTaskId);
   const works = readCrawlWorks(crawlTask);
-  updateTask(item.taskId, { status: "running", phase: "准备本地 Whisper 转写" });
   updateTaskProgress(item.taskId, { stage: "cookies", label: "正在读取专用抖音登录状态" });
   const cookiesPath = await exportDouyinCookies(crawlTask.account_role || "content");
-  try {
-    for (const job of listTranscriptJobsForTask(item.taskId)) {
-      const work = works.find((entry) => String(entry.videoId) === String(job.video_id));
-      await processJob(item.taskId, crawlTask, work || {}, job, cookiesPath);
-    }
-  } finally {
-    if (!loadTranscriptionConfig().whisper.retainDownloadedMedia) {
-      fs.rmSync(path.join(RUNTIME_DIR, "downloads", item.taskId), { recursive: true, force: true });
-    }
-  }
-  const finished = listTranscriptJobsForTask(item.taskId);
-  const completed = finished.filter((job) => job.status === "completed").length;
-  const failed = finished.filter((job) => job.status === "failed").length;
-  updateTaskProgress(item.taskId, {
-    stage: failed ? "partial" : "completed",
-    label: failed ? "本地 Whisper 转写部分失败" : "本地 Whisper 转写完成",
-    discovered: completed + failed,
-    expectedTotal: finished.length,
-  });
-  updateTask(item.taskId, {
-    status: failed ? "partial" : "waiting_for_user",
-    phase: failed ? "本地 Whisper 转写部分失败" : "本地 Whisper 转写完成",
-    summary_json: JSON.stringify({ totalCount: finished.length, completed, failed, provider: "whisper" }),
-    error_message: failed ? `${failed} 条本地 Whisper 转写失败，请查看任务日志后重试。` : null,
-  });
+  return { crawlTask, works, cookiesPath };
 }
 
-function pump() {
-  if (active || !queue.length) return;
-  active = true;
-  const item = queue.shift();
-  run(item)
-    .catch((error) => updateTask(item.taskId, { status: "failed", phase: "本地 Whisper 任务失败", error_message: error.message }))
-    .finally(() => { active = false; pump(); });
-}
+const orchestrator = createTranscriptionBatchOrchestrator({
+  provider: "whisper",
+  runningPhase: "本地 Whisper 全量批处理中",
+  completedPhase: "本地 Whisper 全量转写完成",
+  partialPhase: "本地 Whisper 部分失败，已保留成功结果",
+  prepare: prepareBatch,
+  async processJob({ taskId, job, context }) {
+    const work = context.works.find((entry) => String(entry.videoId) === String(job.video_id));
+    await processJob(taskId, context.crawlTask, work || {}, job, context.cookiesPath);
+  },
+  async cleanup({ taskId }) {
+    if (!loadTranscriptionConfig().whisper.retainDownloadedMedia) {
+      fs.rmSync(path.join(RUNTIME_DIR, "downloads", taskId), { recursive: true, force: true });
+    }
+  },
+});
 
 function submit(crawlTaskId, videoIds) {
   assertRuntime();
@@ -295,9 +271,14 @@ function submit(crawlTaskId, videoIds) {
       provider: "whisper",
     });
   }
-  queue.push({ taskId, crawlTaskId });
-  pump();
+  orchestrator.enqueue(taskId, crawlTaskId);
   return taskId;
 }
 
-module.exports = { submit };
+module.exports = {
+  pause: orchestrator.pause,
+  recoverPending: orchestrator.recoverPending,
+  resume: orchestrator.resume,
+  retryFailed: orchestrator.retryFailed,
+  submit,
+};
