@@ -15,8 +15,34 @@ function auditJson(filePath) {
     : 0;
   const totals = data.totals || {};
   const blockingMissing = blockingFields.reduce((total, field) => total + missing[field], 0);
-  const passed = works.length > 0 && totals.selectedWorks === works.length && uniqueIds === works.length && blockingMissing === 0 && foreignAuthorCount === 0;
+  const pageTotal = Number.isFinite(Number(data.pageTotal)) && Number(data.pageTotal) > 0
+    ? Number(data.pageTotal)
+    : null;
+  const countDelta = pageTotal === null ? null : works.length - pageTotal;
+  const countMismatch = countDelta !== null && countDelta !== 0;
+  const passed = works.length > 0
+    && totals.selectedWorks === works.length
+    && uniqueIds === works.length
+    && blockingMissing === 0
+    && foreignAuthorCount === 0
+    && !countMismatch;
   const warningCount = Object.values(warnings).reduce((total, count) => total + count, 0);
-  return { status: passed ? "passed" : "partial", data, summary: { pageTotal: data.pageTotal || null, totalCount: works.length, uniqueIds, totals, missing, warnings, warningCount, blockingMissing, foreignAuthorCount } };
+  return {
+    status: passed ? "passed" : "partial",
+    data,
+    summary: {
+      pageTotal,
+      totalCount: works.length,
+      uniqueIds,
+      countDelta,
+      countMismatch,
+      totals,
+      missing,
+      warnings,
+      warningCount,
+      blockingMissing,
+      foreignAuthorCount,
+    },
+  };
 }
 module.exports = { auditJson };

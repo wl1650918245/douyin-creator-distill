@@ -11,6 +11,7 @@ const {
   mergeCrawlArtifacts,
   nextLoopStep,
 } = require("../src/services/crawl-loop-policy");
+const { auditJson } = require("../src/services/json-audit");
 const store = require("../src/services/task-store");
 
 function writeArtifact(name, payload) {
@@ -116,6 +117,76 @@ assert.equal(merged.totals.videos, 1);
 assert.equal(merged.totals.imagePosts, 1);
 assert.equal(merged.acquisition.excludedForeignAuthorWorks.length, 1);
 assert.equal(merged.acquisition.excludedForeignAuthorWorks[0].videoId, "foreign");
+
+const baseline = writeArtifact("baseline", {
+  douyinId: "demo",
+  accountSlug: "demo",
+  profileUrl: "https://www.douyin.com/user/target-sec-user",
+  pageTotal: 2,
+  totals: { allWorks: 1, selectedWorks: 1, videos: 1, imagePosts: 0 },
+  works: [{
+    videoId: "old",
+    title: "old verified work",
+    date: "2025-01-01",
+    publishTimestamp: 1735689600,
+    likes: 1,
+    commentCount: 1,
+    collectCount: 1,
+    shareCount: 1,
+    interactionTotal: 4,
+    contentType: "video",
+    videoUrl: "https://www.douyin.com/video/old",
+    shareUrl: "https://www.douyin.com/video/old",
+    authorSecUserId: "target-sec-user",
+  }],
+});
+const incremental = writeArtifact("incremental", {
+  douyinId: "demo",
+  accountSlug: "demo",
+  profileUrl: "https://www.douyin.com/user/target-sec-user",
+  pageTotal: 2,
+  works: [
+    {
+      videoId: "new",
+      title: "new work",
+      date: "2025-01-02",
+      publishTimestamp: 1735776000,
+      likes: 2,
+      commentCount: 1,
+      collectCount: 1,
+      shareCount: 1,
+      interactionTotal: 5,
+      contentType: "video",
+      videoUrl: "https://www.douyin.com/video/new",
+      shareUrl: "https://www.douyin.com/video/new",
+      authorSecUserId: "target-sec-user",
+    },
+    {
+      videoId: "noise",
+      title: "unrelated DOM card",
+      date: "",
+      publishTimestamp: null,
+      contentType: "video",
+      acquisitionSources: ["browser_dom"],
+    },
+  ],
+});
+const recoveredPath = mergeCrawlArtifacts([
+  { attempt: 0, strategy: "verified_baseline", outputPath: baseline, auditStatus: "passed" },
+  { attempt: 1, strategy: "chrome_primary", outputPath: incremental, auditStatus: "partial" },
+], { taskId: "incremental-loop", source: "demo" });
+const recovered = JSON.parse(fs.readFileSync(recoveredPath, "utf8"));
+assert.deepEqual(recovered.works.map((work) => work.videoId), ["new", "old"]);
+assert.equal(recovered.acquisition.excludedUnverifiedIncompleteWorks.length, 1);
+assert.equal(recovered.acquisition.excludedUnverifiedIncompleteWorks[0].videoId, "noise");
+assert.equal(auditJson(recoveredPath).status, "passed");
+
+const incompleteApi = writeArtifact("incomplete-api", {
+  ...JSON.parse(fs.readFileSync(recoveredPath, "utf8")),
+  pageTotal: 3,
+});
+assert.equal(auditJson(incompleteApi).status, "partial");
+assert.equal(auditJson(incompleteApi).summary.countMismatch, true);
 
 store.createTask("loop-task", "demo", {
   sourceMode: "profile",

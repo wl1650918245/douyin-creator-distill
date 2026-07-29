@@ -72,6 +72,12 @@ function profileOwnerSecUserId(payload) {
   return String(payload?.profileUrl || "").match(/douyin\.com\/user\/([^?]+)/)?.[1] || "";
 }
 
+function acquisitionSourceForStrategy(strategy) {
+  if (strategy === "api_supplement") return "internal_api_supplement";
+  if (strategy === "verified_baseline") return "verified_baseline";
+  return "browser_capture";
+}
+
 function mergeCrawlArtifacts(artifacts, { taskId, source }) {
   if (!artifacts.length) throw new Error("没有可合并的抓取产物");
   const payloads = artifacts.map((artifact) => ({ artifact, payload: readPayload(artifact.outputPath) }));
@@ -86,7 +92,7 @@ function mergeCrawlArtifacts(artifacts, { taskId, source }) {
         ...work,
         acquisitionSources: [...new Set([
           ...(work.acquisitionSources || []),
-          artifact.strategy === "api_supplement" ? "internal_api_supplement" : "browser_capture",
+          acquisitionSourceForStrategy(artifact.strategy),
         ])],
       };
       works.set(videoId, mergeWorkRecords(works.get(videoId), incoming));
@@ -99,8 +105,19 @@ function mergeCrawlArtifacts(artifacts, { taskId, source }) {
   const excludedWorks = targetSecUserId
     ? allMergedWorks.filter((work) => work.authorSecUserId && work.authorSecUserId !== targetSecUserId)
     : [];
+  const unverifiedIncompleteWorks = allMergedWorks.filter((work) => {
+    const sources = new Set(work.acquisitionSources || []);
+    const hasTrustedEvidence = sources.has("verified_baseline") || sources.has("internal_api_supplement");
+    return !work.authorSecUserId
+      && (isMissing(work.publishTimestamp) || isMissing(work.date))
+      && !hasTrustedEvidence;
+  });
+  const excludedIds = new Set([
+    ...excludedWorks.map((work) => String(work.videoId)),
+    ...unverifiedIncompleteWorks.map((work) => String(work.videoId)),
+  ]);
   const mergedWorks = allMergedWorks
-    .filter((work) => !targetSecUserId || !work.authorSecUserId || work.authorSecUserId === targetSecUserId)
+    .filter((work) => !excludedIds.has(String(work.videoId)))
     .sort((left, right) => Number(right.publishTimestamp || 0) - Number(left.publishTimestamp || 0));
   const totals = {
     allWorks: mergedWorks.length,
@@ -129,6 +146,11 @@ function mergeCrawlArtifacts(artifacts, { taskId, source }) {
         videoId: work.videoId,
         authorNickname: work.authorNickname || "",
         authorSecUserId: work.authorSecUserId,
+      })),
+      excludedUnverifiedIncompleteWorks: unverifiedIncompleteWorks.map((work) => ({
+        videoId: work.videoId,
+        title: work.title || "",
+        acquisitionSources: work.acquisitionSources || [],
       })),
     },
   };

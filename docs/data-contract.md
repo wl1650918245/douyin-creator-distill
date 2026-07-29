@@ -59,7 +59,9 @@ Audit conclusion is exactly one of: `passed`, `partial`, or `failed`.
 - `partial`: usable only for explicitly limited analysis; not an automatic enrichment input.
 - `failed`: requires a new crawl or repair; no downstream task starts.
 
-Blocking audit failures include missing work IDs or links, duplicate work IDs, count inconsistency, and missing time, engagement, or type fields. A missing `title` is a non-blocking warning when the work still has a stable ID and usable link. The UI must display a deterministic fallback such as `未命名图文 · <videoId>` or `未命名视频 · <videoId>`, retain the warning count, and allow transcription and analysis. Re-auditing an existing JSON changes only local task/audit state; it does not modify the evidence file or create a new crawl run.
+Blocking audit failures include missing work IDs or links, duplicate work IDs, the standard JSON work count not matching the visible page count, and missing time, engagement, or type fields. A missing `title` is a non-blocking warning when the work still has a stable ID and usable link. The UI must display a deterministic fallback such as `未命名图文 · <videoId>` or `未命名视频 · <videoId>`, retain the warning count, and allow transcription and analysis.
+
+重新审核不会请求抖音，也不会修改任何原始抓取 JSON。对于具有增量基线和多轮尝试证据的主页任务，重新审核会按当前规则生成新的派生合并 JSON，并登记新的审核结果；原始文件、被排除卡片和各轮产物继续保留。
 
 ## 5. Source Scope
 

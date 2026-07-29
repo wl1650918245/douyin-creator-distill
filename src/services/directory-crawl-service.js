@@ -10,6 +10,7 @@ const {
   createTask,
   failSubscriptionCheck,
   getFavoritesDirectoryCache,
+  getSubscription,
   getTask,
   listTaskAttempts,
   listTasks,
@@ -99,6 +100,55 @@ function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+function verifiedBaselineArtifact(job) {
+  if (job.sourceMode !== "profile" || !job.subscriptionId) return null;
+  const subscription = getSubscription(job.subscriptionId);
+  const outputPath = subscription?.baseline_output_path;
+  if (!outputPath || !fs.existsSync(outputPath)) return null;
+  try {
+    const audit = auditJson(outputPath);
+    if (audit.status !== "passed") return null;
+    return {
+      attempt: 0,
+      strategy: "verified_baseline",
+      outputPath,
+      auditStatus: "passed",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function crawlArtifacts(job, attempts = listTaskAttempts(job.id)) {
+  const artifacts = attempts
+    .filter((attempt) => attempt.output_path && fs.existsSync(attempt.output_path))
+    .map((attempt) => ({
+      attempt: attempt.attempt_no,
+      strategy: attempt.strategy,
+      outputPath: attempt.output_path,
+      auditStatus: attempt.audit_status,
+    }));
+  const baseline = verifiedBaselineArtifact(job);
+  return baseline ? [baseline, ...artifacts] : artifacts;
+}
+
+function refreshAttemptAudits(taskId) {
+  for (const attempt of listTaskAttempts(taskId)) {
+    if (!attempt.output_path || !fs.existsSync(attempt.output_path)) continue;
+    try {
+      const audit = auditJson(attempt.output_path);
+      updateTaskAttempt(attempt.id, {
+        status: audit.status === "passed" ? "completed" : "partial",
+        audit_status: audit.status,
+        error_class: audit.status === "passed" ? null : "incomplete_directory",
+        metadata_json: JSON.stringify(audit.summary),
+      });
+    } catch {
+      // Preserve the original attempt evidence when a historic artifact is unreadable.
+    }
+  }
+}
+
 function persistAudit(taskId, source, outputPath, recordRun = false) {
   const audit = auditJson(outputPath);
   const status = audit.status === "passed" ? "waiting_for_user" : "partial";
@@ -138,8 +188,8 @@ function persistAudit(taskId, source, outputPath, recordRun = false) {
   });
   if (recordRun) addRun({ id: crypto.randomUUID(), taskId, source, outputPath, auditStatus: audit.status, totalCount: audit.summary.totalCount });
   if (status === "waiting_for_user") {
-    upsertSubscriptionFromTask(taskId);
     if (task?.options?.subscriptionId) completeSubscriptionCheck(task.options.subscriptionId, outputPath);
+    else upsertSubscriptionFromTask(taskId);
   } else if (task?.options?.subscriptionId) {
     failSubscriptionCheck(task.options.subscriptionId, "JSON 审核待复核，未更新增量基线");
   }
@@ -175,8 +225,22 @@ function reaudit(taskId) {
   if (!task) throw new Error("任务不存在");
   if (!task.output_path || !fs.existsSync(task.output_path)) throw new Error("该任务没有可重新审核的 JSON");
   if (task.options?.kind === "favorites-discovery") throw new Error("收藏夹目录发现任务无需 JSON 审核，请选择收藏夹后继续抓取");
-  appendLog(taskId, "按当前审核规则重新检查现有 JSON，不重新抓取。\n");
-  return persistAudit(taskId, task.source, task.output_path);
+  appendLog(taskId, "按当前审核规则合并已验证基线和现有抓取证据，不重新请求抖音。\n");
+  refreshAttemptAudits(taskId);
+  const job = {
+    id: task.id,
+    source: task.source,
+    sourceMode: task.source_mode,
+    accountRole: task.account_role,
+    profileId: task.profile_id,
+    subscriptionId: task.options?.subscriptionId || null,
+  };
+  const artifacts = crawlArtifacts(job);
+  const outputPath = artifacts.length
+    ? mergeCrawlArtifacts(artifacts, { taskId: task.id, source: task.source })
+    : task.output_path;
+  persistSourceContext(outputPath, job);
+  return persistAudit(taskId, task.source, outputPath, true);
 }
 
 function runCrawlerAttempt(job, step, attemptNo) {
@@ -267,9 +331,7 @@ function runCrawlerAttempt(job, step, attemptNo) {
 async function runGoal(job) {
   const steps = loopStepsFor(job);
   const priorAttempts = listTaskAttempts(job.id);
-  const artifacts = priorAttempts
-    .filter((attempt) => attempt.output_path && fs.existsSync(attempt.output_path))
-    .map((attempt) => ({ attempt: attempt.attempt_no, strategy: attempt.strategy, outputPath: attempt.output_path, auditStatus: attempt.audit_status }));
+  const artifacts = crawlArtifacts(job, priorAttempts);
   const startIndex = Math.min(priorAttempts.length, steps.length);
 
   for (let index = startIndex; index < steps.length; index += 1) {
