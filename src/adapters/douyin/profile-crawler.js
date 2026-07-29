@@ -86,6 +86,7 @@ function parseArgs() {
     useDirectApi: true,
     apiSupplementOnly: false,
     disableSearchApi: false,
+    incrementalBaselinePath: null,
   };
 
   for (const arg of args) {
@@ -132,6 +133,8 @@ function parseArgs() {
       options.apiSupplementOnly = true;
     } else if (arg === '--no-search-api') {
       options.disableSearchApi = true;
+    } else if (arg.startsWith('--incremental-baseline=')) {
+      options.incrementalBaselinePath = arg.slice('--incremental-baseline='.length);
     } else if (!arg.startsWith('--') && !options.douyinId) {
       options.douyinId = arg;
     }
@@ -476,6 +479,7 @@ function exportAnalysisBundle(douyinId, profileUrl, allVideos, filteredVideos, o
       includeImages: options.includeImages !== false,
       dry: Boolean(options.dry),
       acquisitionMode: options.apiSupplementOnly ? 'api_supplement' : options.useDirectApi ? 'hybrid' : 'browser',
+      incremental: Boolean(options.incrementalBaselinePath),
     },
     totals: {
       allWorks: allVideos.length,
@@ -1135,6 +1139,11 @@ async function collectAllVideos(page, options, mode, seedMap = new Map()) {
   const targetSecUserId = pageUrl.match(/douyin\.com\/user\/([^?]+)/)?.[1] || null;
   const postCollector = attachAwemePostCollector(page, foundVideoMap, targetSecUserId);
   const apiBackedIds = new Set(seedMap.keys());
+  const incrementalBaselineIds = options.incrementalBaselineIds instanceof Set
+    ? options.incrementalBaselineIds
+    : new Set();
+  let incrementalNewTotal = [...foundVideoMap.keys()].filter((videoId) => !incrementalBaselineIds.has(videoId)).length;
+  let incrementalStableRounds = 0;
   const report = {
     mode,
     rounds: 0,
@@ -1199,6 +1208,17 @@ async function collectAllVideos(page, options, mode, seedMap = new Map()) {
 
       report.rounds = round + 1;
       report.totalVideos = foundVideoMap.size;
+      const incrementalProgress = evaluateIncrementalProgress(
+        foundVideoMap.keys(),
+        incrementalBaselineIds,
+        incrementalNewTotal,
+        incrementalStableRounds,
+        report.rounds,
+      );
+      incrementalNewTotal = incrementalProgress.newTotal;
+      incrementalStableRounds = incrementalProgress.stableRounds;
+      report.incrementalNewTotal = incrementalProgress.newTotal;
+      report.incrementalOverlap = incrementalProgress.overlap;
 
       if (newCount > 0) {
         report.idleRounds = 0;
@@ -1221,6 +1241,19 @@ async function collectAllVideos(page, options, mode, seedMap = new Map()) {
 
       if (options.limit > 0 && foundVideoMap.size >= options.limit) {
         report.stopReason = 'limit-reached';
+        break;
+      }
+
+      if (incrementalProgress.shouldStop) {
+        report.stopReason = 'incremental-baseline-overlap';
+        emitProgress({
+          stage: 'incremental_boundary',
+          label: '已进入历史作品区间',
+          round: report.rounds,
+          discovered: foundVideoMap.size,
+          expectedTotal: options.expectedTotal || null,
+          detail: `发现 ${incrementalProgress.newTotal} 条候选新增，连续命中 ${incrementalProgress.overlap} 条历史作品`,
+        });
         break;
       }
 
@@ -1259,6 +1292,32 @@ async function collectAllVideos(page, options, mode, seedMap = new Map()) {
   }
 
   return { foundVideoMap, report, apiBackedIds };
+}
+
+function loadIncrementalBaseline(filePath) {
+  if (!filePath) return { ids: new Set(), outputPath: null };
+  const payload = loadJsonFile(filePath, null);
+  if (!payload || !Array.isArray(payload.works)) {
+    throw new Error(`增量基线不可读取: ${filePath}`);
+  }
+  const ids = new Set(payload.works
+    .map((work) => String(work.videoId || work.awemeId || work.id || '').trim())
+    .filter(Boolean));
+  if (!ids.size) throw new Error(`增量基线没有有效作品 ID: ${filePath}`);
+  return { ids, outputPath: filePath };
+}
+
+function evaluateIncrementalProgress(foundIds, baselineIds, previousNewTotal, previousStableRounds, round) {
+  const ids = [...foundIds].map(String);
+  if (!(baselineIds instanceof Set) || baselineIds.size === 0) {
+    return { newTotal: ids.length, overlap: 0, stableRounds: 0, shouldStop: false };
+  }
+  const newTotal = ids.filter((videoId) => !baselineIds.has(videoId)).length;
+  const overlap = ids.length - newTotal;
+  const stableRounds = newTotal > previousNewTotal ? 0 : previousStableRounds + 1;
+  const requiredOverlap = Math.min(12, baselineIds.size);
+  const shouldStop = round >= 3 && overlap >= requiredOverlap && stableRounds >= 2;
+  return { newTotal, overlap, stableRounds, shouldStop };
 }
 
 function findKnownProfileUrl(douyinId) {
@@ -1316,6 +1375,12 @@ async function main() {
     console.log('  npm run crawl:profile -- jianghushuo --days=7 --min-likes=1000');
     console.log('  npm run crawl:profile -- jianghushuo --videos-only --sort-by=likes --limit=5');
     return;
+  }
+
+  if (options.incrementalBaselinePath) {
+    const baseline = loadIncrementalBaseline(options.incrementalBaselinePath);
+    options.incrementalBaselineIds = baseline.ids;
+    console.log(`增量模式: 已加载 ${baseline.ids.size} 条历史作品 ID`);
   }
 
   if (false && !options.douyinId) {
@@ -2407,4 +2472,10 @@ if (require.main === module) {
   main().catch(console.error);
 }
 
-module.exports = { main, createVideoSnapshotFromAweme, findKnownProfileUrl };
+module.exports = {
+  main,
+  createVideoSnapshotFromAweme,
+  evaluateIncrementalProgress,
+  findKnownProfileUrl,
+  loadIncrementalBaseline,
+};

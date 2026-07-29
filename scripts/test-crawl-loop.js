@@ -12,6 +12,10 @@ const {
   nextLoopStep,
 } = require("../src/services/crawl-loop-policy");
 const { auditJson } = require("../src/services/json-audit");
+const {
+  evaluateIncrementalProgress,
+  loadIncrementalBaseline,
+} = require("../src/adapters/douyin/profile-crawler");
 const store = require("../src/services/task-store");
 
 function writeArtifact(name, payload) {
@@ -122,7 +126,7 @@ const baseline = writeArtifact("baseline", {
   douyinId: "demo",
   accountSlug: "demo",
   profileUrl: "https://www.douyin.com/user/target-sec-user",
-  pageTotal: 2,
+  pageTotal: 1,
   totals: { allWorks: 1, selectedWorks: 1, videos: 1, imagePosts: 0 },
   works: [{
     videoId: "old",
@@ -177,16 +181,51 @@ const recoveredPath = mergeCrawlArtifacts([
 ], { taskId: "incremental-loop", source: "demo" });
 const recovered = JSON.parse(fs.readFileSync(recoveredPath, "utf8"));
 assert.deepEqual(recovered.works.map((work) => work.videoId), ["new", "old"]);
+assert.equal(recovered.acquisition.mode, "append_only_incremental");
 assert.equal(recovered.acquisition.excludedUnverifiedIncompleteWorks.length, 1);
 assert.equal(recovered.acquisition.excludedUnverifiedIncompleteWorks[0].videoId, "noise");
 assert.equal(auditJson(recoveredPath).status, "passed");
 
 const incompleteApi = writeArtifact("incomplete-api", {
   ...JSON.parse(fs.readFileSync(recoveredPath, "utf8")),
-  pageTotal: 3,
+  pageTotal: 1,
 });
-assert.equal(auditJson(incompleteApi).status, "partial");
+assert.equal(auditJson(incompleteApi).status, "passed");
 assert.equal(auditJson(incompleteApi).summary.countMismatch, true);
+assert.equal(auditJson(incompleteApi).summary.countMismatchBlocking, false);
+
+const fullSnapshotMismatch = writeArtifact("full-snapshot-mismatch", {
+  ...JSON.parse(fs.readFileSync(recoveredPath, "utf8")),
+  pageTotal: 3,
+  acquisition: { mode: "full_snapshot" },
+});
+assert.equal(auditJson(fullSnapshotMismatch).status, "partial");
+assert.equal(auditJson(fullSnapshotMismatch).summary.countMismatchBlocking, true);
+
+const loadedBaseline = loadIncrementalBaseline(recoveredPath);
+assert.deepEqual([...loadedBaseline.ids].sort(), ["new", "old"]);
+const baselineIds = new Set(Array.from({ length: 20 }, (_, index) => String(index + 1)));
+const incrementalFoundIds = ["new-work", ...Array.from({ length: 12 }, (_, index) => String(index + 1))];
+const firstIncrementalRound = evaluateIncrementalProgress(incrementalFoundIds, baselineIds, 0, 0, 1);
+assert.equal(firstIncrementalRound.shouldStop, false);
+const secondIncrementalRound = evaluateIncrementalProgress(
+  incrementalFoundIds,
+  baselineIds,
+  firstIncrementalRound.newTotal,
+  firstIncrementalRound.stableRounds,
+  2,
+);
+assert.equal(secondIncrementalRound.shouldStop, false);
+const thirdIncrementalRound = evaluateIncrementalProgress(
+  incrementalFoundIds,
+  baselineIds,
+  secondIncrementalRound.newTotal,
+  secondIncrementalRound.stableRounds,
+  3,
+);
+assert.equal(thirdIncrementalRound.shouldStop, true);
+assert.equal(thirdIncrementalRound.overlap, 12);
+assert.equal(thirdIncrementalRound.newTotal, 1);
 
 store.createTask("loop-task", "demo", {
   sourceMode: "profile",

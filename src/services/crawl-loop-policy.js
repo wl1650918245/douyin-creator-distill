@@ -100,6 +100,7 @@ function mergeCrawlArtifacts(artifacts, { taskId, source }) {
   }
 
   const latest = payloads[payloads.length - 1].payload;
+  const hasVerifiedBaseline = artifacts.some((artifact) => artifact.strategy === "verified_baseline");
   const targetSecUserId = payloads.map(({ payload }) => profileOwnerSecUserId(payload)).find(Boolean) || "";
   const allMergedWorks = [...works.values()];
   const excludedWorks = targetSecUserId
@@ -108,9 +109,12 @@ function mergeCrawlArtifacts(artifacts, { taskId, source }) {
   const unverifiedIncompleteWorks = allMergedWorks.filter((work) => {
     const sources = new Set(work.acquisitionSources || []);
     const hasTrustedEvidence = sources.has("verified_baseline") || sources.has("internal_api_supplement");
-    return !work.authorSecUserId
-      && (isMissing(work.publishTimestamp) || isMissing(work.date))
-      && !hasTrustedEvidence;
+    if (hasVerifiedBaseline && targetSecUserId) {
+      return !hasTrustedEvidence && work.authorSecUserId !== targetSecUserId;
+    }
+    return !hasTrustedEvidence
+      && !work.authorSecUserId
+      && (isMissing(work.publishTimestamp) || isMissing(work.date));
   });
   const excludedIds = new Set([
     ...excludedWorks.map((work) => String(work.videoId)),
@@ -133,7 +137,10 @@ function mergeCrawlArtifacts(artifacts, { taskId, source }) {
     totals,
     works: mergedWorks,
     acquisition: {
-      policy: "chrome-primary-chrome-recovery-api-supplement",
+      policy: hasVerifiedBaseline
+        ? "verified-baseline-incremental-chrome-recovery-api-supplement"
+        : "chrome-primary-chrome-recovery-api-supplement",
+      mode: hasVerifiedBaseline ? "append_only_incremental" : "full_snapshot",
       taskId,
       attempts: artifacts.map((artifact) => ({
         attempt: artifact.attempt,

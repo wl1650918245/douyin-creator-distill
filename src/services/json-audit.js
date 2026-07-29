@@ -20,12 +20,14 @@ function auditJson(filePath) {
     : null;
   const countDelta = pageTotal === null ? null : works.length - pageTotal;
   const countMismatch = countDelta !== null && countDelta !== 0;
+  const appendOnlyIncremental = data.acquisition?.mode === "append_only_incremental";
+  const countMismatchBlocking = countMismatch && !appendOnlyIncremental;
   const passed = works.length > 0
     && totals.selectedWorks === works.length
     && uniqueIds === works.length
     && blockingMissing === 0
     && foreignAuthorCount === 0
-    && !countMismatch;
+    && !countMismatchBlocking;
   const warningCount = Object.values(warnings).reduce((total, count) => total + count, 0);
   return {
     status: passed ? "passed" : "partial",
@@ -36,6 +38,8 @@ function auditJson(filePath) {
       uniqueIds,
       countDelta,
       countMismatch,
+      countMismatchBlocking,
+      snapshotMode: appendOnlyIncremental ? "append_only_incremental" : "full_snapshot",
       totals,
       missing,
       warnings,

@@ -59,7 +59,9 @@ Audit conclusion is exactly one of: `passed`, `partial`, or `failed`.
 - `partial`: usable only for explicitly limited analysis; not an automatic enrichment input.
 - `failed`: requires a new crawl or repair; no downstream task starts.
 
-Blocking audit failures include missing work IDs or links, duplicate work IDs, the standard JSON work count not matching the visible page count, and missing time, engagement, or type fields. A missing `title` is a non-blocking warning when the work still has a stable ID and usable link. The UI must display a deterministic fallback such as `未命名图文 · <videoId>` or `未命名视频 · <videoId>`, retain the warning count, and allow transcription and analysis.
+首次全量快照中，作品数与主页可见计数不一致属于阻断错误。追加式增量中，历史基线会保留已删除、隐藏或转私密的旧作品，因此累计作品数与当前主页计数不一致只记录为非阻断差异。两种模式都必须阻断作品 ID 或链接缺失、作品 ID 重复、时间或类型等必填字段缺失，以及无法证明属于目标博主的新增卡片。
+
+缺少 `title` 时，只要作品仍有稳定 ID 和可用链接，就作为非阻断警告。页面使用 `未命名图文 · <videoId>` 或 `未命名视频 · <videoId>` 等确定性名称，并允许继续转写和分析。
 
 重新审核不会请求抖音，也不会修改任何原始抓取 JSON。对于具有增量基线和多轮尝试证据的主页任务，重新审核会按当前规则生成新的派生合并 JSON，并登记新的审核结果；原始文件、被排除卡片和各轮产物继续保留。
 
@@ -76,3 +78,5 @@ Public creator posts, a single work, and the current user's favorites collection
 - 同一收藏夹 Profile 只能对应一个活动关注来源；显示名称乱码或历史任务来源差异不能产生重复收藏夹。
 - 取消关注不得删除标准 JSON、转写文本、分析报告或任务历史。
 - 定时检查只有在新 JSON 审核通过后才能更新 `baseline_output_path`；失败和待复核结果不得推进基线。
+- 公开博主定时检查以审核通过的基线 ID 集合为边界，只追加新 `videoId`；不周期性执行全量删除对账。
+- 用户主动重新抓取仍生成全量快照，可用于人工重建基线。

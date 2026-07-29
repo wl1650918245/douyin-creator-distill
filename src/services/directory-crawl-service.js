@@ -274,6 +274,10 @@ function runCrawlerAttempt(job, step, attemptNo) {
       args.push(job.source, "--limit=0", "--include-images", "--dry");
       if (step.strategy === "api_supplement") args.push("--api-supplement");
       else args.push("--no-direct-api", "--no-search-api");
+      const baseline = verifiedBaselineArtifact(job);
+      if (baseline && step.strategy !== "api_supplement") {
+        args.push(`--incremental-baseline=${baseline.outputPath}`);
+      }
     }
     args.push(`--profile=${job.profilePath}`);
     const child = spawn(process.execPath, args, { windowsHide: true, env: process.env });
