@@ -20,6 +20,10 @@ function summarize(jobs, provider) {
   const failed = count("failed") + count("partial");
   const running = count("running");
   const queued = count("queued");
+  const providerCounts = jobs.reduce((counts, job) => {
+    counts[job.provider] = (counts[job.provider] || 0) + 1;
+    return counts;
+  }, {});
   return {
     totalCount: jobs.length,
     completed,
@@ -29,6 +33,7 @@ function summarize(jobs, provider) {
     processed: completed + failed,
     attempts: jobs.reduce((total, job) => total + Number(job.attempt_count || 0), 0),
     provider,
+    providerCounts,
   };
 }
 

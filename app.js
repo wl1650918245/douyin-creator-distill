@@ -26,6 +26,7 @@ const openBreakdownFolder = document.querySelector("#open-breakdown-folder");
 const useBreakdownForTopics = document.querySelector("#use-breakdown-for-topics");
 const transcribeSelected = document.querySelector("#transcribe-selected");
 const transcriptionProviderDialog = document.querySelector("#transcription-provider-dialog");
+let defaultTranscriptionProvider = "cloud-first";
 const favoritesCollectionsDialog = document.querySelector("#favorites-collections-dialog");
 const favoritesCollectionsForm = document.querySelector("#favorites-collections-form");
 const favoritesCollectionsList = document.querySelector("#favorites-collections-list");
@@ -270,7 +271,7 @@ function scrubProviderName(value) {
     .replace(/connect ETIMEDOUT\s+[^\s]+/gi, "分析模型连接超时，请检查当前网络或系统代理后重试")
     .replace(/connect ECONNREFUSED\s+[^\s]+/gi, "分析模型连接被拒绝，请检查网络代理和模型服务状态后重试");
 }
-function isGetNotesTask(task) { return ["getnotes", "whisper"].includes(task?.summary?.provider) || String(task?.source || "").startsWith(`${legacyProviderName}转写 / `) || String(task?.source || "").startsWith("文本提取 / ") || String(task?.source || "").startsWith("Whisper转写 / "); }
+function isGetNotesTask(task) { return ["getnotes", "whisper", "cloud-first", "whisper-first"].includes(task?.summary?.provider) || String(task?.source || "").startsWith(`${legacyProviderName}转写 / `) || String(task?.source || "").startsWith("文本提取 / ") || String(task?.source || "").startsWith("Whisper转写 / ") || String(task?.source || "").startsWith("云端优先转写 / ") || String(task?.source || "").startsWith("Whisper优先转写 / "); }
 function isViralTask(task) { return task?.summary?.provider === "viral-breakdown" || String(task?.source || "").startsWith("爆款拆解 / "); }
 function isContentIntelligenceTask(task) { return ["topic-advisor", "creator-agent", "creator-agent-review"].includes(task?.summary?.provider); }
 function isAnalysisTask(task) { return isViralTask(task) || isContentIntelligenceTask(task); }
@@ -280,6 +281,8 @@ function taskKind(task) {
   if (provider === "topic-advisor") return "选题顾问";
   if (provider === "creator-agent") return "博主智能体";
   if (provider === "creator-agent-review") return "智能体审稿";
+  if (provider === "cloud-first") return "云端优先转写";
+  if (provider === "whisper-first") return "Whisper 优先转写";
   return isViralTask(task) ? "爆款拆解" : provider === "whisper" ? "本地 Whisper" : isGetNotesTask(task) ? "文本提取" : isFavoritesDiscoveryTask(task) ? "收藏夹目录" : "目录抓取";
 }
 function taskFailureDetail(task) {
@@ -346,7 +349,7 @@ function taskDisplayName(task) {
   if (task?.summary?.provider === "creator-agent") return task.creator_name || "博主智能体画像";
   if (task?.summary?.provider === "creator-agent-review") return `${task.creator_name || "博主智能体"} · 稿件审阅`;
   if (isViralTask(task)) return task.creator_name || String(task.source || "").replace("爆款拆解 / ", "") || "爆款拆解报告";
-  if (isGetNotesTask(task)) return task.creator_name || String(task.source || "").replace(`${legacyProviderName}转写 / `, "").replace("文本提取 / ", "").replace("Whisper转写 / ", "") || "所选作品";
+  if (isGetNotesTask(task)) return task.creator_name || String(task.source || "").replace(`${legacyProviderName}转写 / `, "").replace("文本提取 / ", "").replace("Whisper转写 / ", "").replace("云端优先转写 / ", "").replace("Whisper优先转写 / ", "") || "所选作品";
   if (task?.source_mode === "favorites") return "我的收藏夹";
   return task.creator_name || `抖音号：${task.source}`;
 }
@@ -703,9 +706,12 @@ async function submitBreakdown(crawlTaskId, videoIds, requireConfirmation = true
 analyzeSelected.addEventListener("click", () => submitBreakdown(currentCrawlTaskId, [...selectedIds]));
 function chooseTranscriptionProvider() {
   return new Promise((resolve) => {
+    transcriptionProviderDialog.querySelectorAll(".provider-option").forEach((button) => {
+      button.classList.toggle("is-default", button.value === defaultTranscriptionProvider);
+    });
     const onClose = () => {
       transcriptionProviderDialog.removeEventListener("close", onClose);
-      resolve(["getnotes", "whisper"].includes(transcriptionProviderDialog.returnValue) ? transcriptionProviderDialog.returnValue : "");
+      resolve(["cloud-first", "whisper-first"].includes(transcriptionProviderDialog.returnValue) ? transcriptionProviderDialog.returnValue : "");
     };
     transcriptionProviderDialog.addEventListener("close", onClose);
     transcriptionProviderDialog.showModal();
@@ -716,19 +722,10 @@ transcribeSelected.addEventListener("click", async () => {
   const count = selectedIds.size;
   const provider = await chooseTranscriptionProvider();
   if (!provider) return;
-  const providerLabel = provider === "whisper" ? "本地 Whisper" : "云端链接提取";
-  if (provider !== "whisper" && count > 100) {
-    selectionNote.textContent = `云端链接提取每次最多提交 100 条；当前已选 ${count} 条，请减少选择或改用本地 Whisper。`;
-    showToast("云端通道最多提交 100 条，本地 Whisper 不限制总数。", "review");
-    return;
-  }
-  if (provider === "whisper" && works.some((work) => selectedIds.has(work.id) && work.contentType === "图文")) {
-    showToast("本地 Whisper 不能处理图文作品，请改用云端链接提取。", "review");
-    return;
-  }
-  if (!window.confirm(provider === "whisper"
-    ? `将下载 ${count} 条视频并在本机串行执行 Whisper。会生成原文、时间轴 JSON 和 SRT，不消耗云端额度。是否继续？`
-    : `将提交 ${count} 条抖音链接到云端提取服务。最多消耗 ${count} 次配额，失败后不会静默切换 Whisper。是否继续？`)) return;
+  const providerLabel = provider === "whisper-first" ? "Whisper 优先" : "云端优先";
+  if (!window.confirm(provider === "whisper-first"
+    ? `将对 ${count} 条作品优先执行本地 Whisper；图文或本地单条失败时自动改走云端。任务不限总数，并保留每条作品的实际通道。是否继续？`
+    : `将对 ${count} 条作品优先使用云端整理与转写；今日参考额度用完或接口明确返回额度耗尽后，剩余视频自动续接本地 Whisper。任务不限总数。是否继续？`)) return;
   transcribeSelected.disabled = true; selectionNote.textContent = `正在创建 ${count} 条${providerLabel}任务...`;
   try {
     const response = await fetch("/api/transcriptions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ crawlTaskId: currentCrawlTaskId, videoIds: [...selectedIds], provider }) }); const payload = await response.json();
@@ -1620,10 +1617,11 @@ async function loadTranscriptionSettings() {
   const response = await fetch("/api/transcription-settings");
   if (!response.ok) return;
   const settings = await response.json();
+  defaultTranscriptionProvider = settings.defaultProvider || "cloud-first";
   document.querySelector("#cloud-api-base-url").value = settings.cloud?.apiBaseUrl || "";
   document.querySelector("#cloud-client-id").value = settings.cloud?.clientId || "";
   document.querySelector("#cloud-key-status").textContent = settings.cloud?.apiKeyConfigured ? "API Key 已配置，页面不会读取或显示原值。" : "尚未配置有效 API Key。";
-  const providerInput = document.querySelector(`input[name="default-provider"][value="${settings.defaultProvider || "getnotes"}"]`);
+  const providerInput = document.querySelector(`input[name="default-provider"][value="${defaultTranscriptionProvider}"]`);
   if (providerInput) providerInput.checked = true;
   const labels = { ffmpeg: "FFmpeg", model: "Whisper small 模型", python: "项目独立 Python" };
   document.querySelector("#runtime-diagnostics").innerHTML = Object.entries(settings.diagnostics || {}).map(([key, item]) => `<div class="${item.ready ? "is-ready" : "is-missing"}"><strong>${labels[key] || key}</strong><span>${item.ready ? `已就绪 · ${formatRuntimeSize(item.sizeBytes)}` : "缺失"}</span></div>`).join("");
@@ -1632,7 +1630,7 @@ async function loadTranscriptionSettings() {
 document.querySelector("#transcription-settings-form")?.addEventListener("submit", async (event) => {
   event.preventDefault();
   const body = {
-    defaultProvider: document.querySelector('input[name="default-provider"]:checked')?.value || "getnotes",
+    defaultProvider: document.querySelector('input[name="default-provider"]:checked')?.value || "cloud-first",
     cloud: {
       apiBaseUrl: document.querySelector("#cloud-api-base-url").value.trim(),
       clientId: document.querySelector("#cloud-client-id").value.trim(),

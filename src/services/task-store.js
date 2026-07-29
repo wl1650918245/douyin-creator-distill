@@ -25,11 +25,15 @@ try { db.exec("ALTER TABLE transcript_jobs ADD COLUMN manifest_path TEXT"); } ca
 try { db.exec("ALTER TABLE transcript_jobs ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0"); } catch (error) { if (!String(error.message).includes("duplicate column")) throw error; }
 try { db.exec("ALTER TABLE transcript_jobs ADD COLUMN max_attempts INTEGER NOT NULL DEFAULT 3"); } catch (error) { if (!String(error.message).includes("duplicate column")) throw error; }
 try { db.exec("ALTER TABLE transcript_jobs ADD COLUMN last_started_at TEXT"); } catch (error) { if (!String(error.message).includes("duplicate column")) throw error; }
+try { db.exec("ALTER TABLE transcript_jobs ADD COLUMN provider_started_at TEXT"); } catch (error) { if (!String(error.message).includes("duplicate column")) throw error; }
 try { db.exec("ALTER TABLE tasks ADD COLUMN source_mode TEXT"); } catch (error) { if (!String(error.message).includes("duplicate column")) throw error; }
 try { db.exec("ALTER TABLE tasks ADD COLUMN account_role TEXT"); } catch (error) { if (!String(error.message).includes("duplicate column")) throw error; }
 try { db.exec("ALTER TABLE tasks ADD COLUMN profile_id TEXT"); } catch (error) { if (!String(error.message).includes("duplicate column")) throw error; }
 try { db.exec("ALTER TABLE tasks ADD COLUMN options_json TEXT"); } catch (error) { if (!String(error.message).includes("duplicate column")) throw error; }
 try { db.exec("ALTER TABLE subscriptions ADD COLUMN deleted_at TEXT"); } catch (error) { if (!String(error.message).includes("duplicate column")) throw error; }
+db.prepare(`UPDATE transcript_jobs SET provider_started_at=created_at
+  WHERE provider='getnotes' AND provider_started_at IS NULL
+    AND (COALESCE(provider_task_id,'') != '' OR COALESCE(note_id,'') != '')`).run();
 
 function repairWhisperProgressEncoding() {
   const labels = {
@@ -141,9 +145,16 @@ function listTranscriptJobsForTask(taskId) { return db.prepare("SELECT * FROM tr
 function listRecoverableTranscriptTasks(provider) {
   return db.prepare(`SELECT DISTINCT tasks.* FROM tasks
     JOIN transcript_jobs ON transcript_jobs.task_id=tasks.id
-    WHERE transcript_jobs.provider=? AND tasks.status='queued'
+    WHERE json_extract(tasks.summary_json,'$.provider')=? AND tasks.status='queued'
       AND transcript_jobs.status IN ('queued','running')
     ORDER BY tasks.created_at ASC`).all(provider).map(hydrateTask);
+}
+function countCloudTranscriptJobsSince(since) {
+  const row = db.prepare(`SELECT COUNT(*) AS total FROM transcript_jobs
+    WHERE provider='getnotes'
+      AND (COALESCE(provider_task_id,'') != '' OR COALESCE(note_id,'') != '')
+      AND provider_started_at>=?`).get(since);
+  return Number(row?.total || 0);
 }
 function retryTranscriptJobs(taskId) {
   const jobs = listTranscriptJobsForTask(taskId);
@@ -336,6 +347,7 @@ module.exports = {
   appendLog,
   closeTaskStore,
   completeSubscriptionCheck,
+  countCloudTranscriptJobsSince,
   createTaskAttempt,
   createAgentReview,
   createCreatorAgent,

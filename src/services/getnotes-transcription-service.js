@@ -14,8 +14,20 @@ let lastRequestAt = 0;
 function delay(milliseconds) { return new Promise((resolve) => setTimeout(resolve, milliseconds)); }
 async function rateLimit() { const wait = Math.max(0, 2000 - (Date.now() - lastRequestAt)); if (wait) await delay(wait); lastRequestAt = Date.now(); }
 function parsePayload(raw) {
+  if (raw && typeof raw === "object") return raw;
   const normalized = String(raw || "").replace(/("(?:id|note_id|next_cursor|task_id)"\s*:\s*)(\d{15,})/g, "$1\"$2\"");
   return JSON.parse(normalized);
+}
+function providerError(payload, fallbackMessage) {
+  const code = String(payload?.error?.code ?? payload?.code ?? "");
+  const message = String(payload?.error?.message || payload?.message || fallbackMessage || "云端链接提取接口返回失败");
+  const error = new Error(code ? `${message}（错误码 ${code}）` : message);
+  error.providerCode = code;
+  error.quotaExhausted = code === "19" || /total request limit|额度已用尽|配额已用尽|请求总量.*上限/i.test(message);
+  return error;
+}
+function isQuotaExhaustedError(error) {
+  return Boolean(error?.quotaExhausted || String(error?.providerCode || "") === "19" || /total request limit|错误码\s*19|额度已用尽|配额已用尽/i.test(String(error?.message || error || "")));
 }
 async function apiRequest(method, endpoint, params, data) {
   if (!fs.existsSync(TEXT_EXTRACTION_CONFIG_PATH)) throw new Error("缺少项目文本提取配置文件 config/text-extraction.config.json。");
@@ -24,9 +36,16 @@ async function apiRequest(method, endpoint, params, data) {
   const apiKey = String(config.apiKey || "").trim(); const clientId = String(config.clientId || "").trim();
   if (!apiBaseUrl || !apiKey || !clientId) throw new Error("请填写项目配置文件 config/text-extraction.config.json 的 apiBaseUrl、apiKey 和 clientId。");
   await rateLimit();
-  const response = await axios.request({ method, url: `${apiBaseUrl}${endpoint}`, params, data, timeout: 60000, responseType: "text", headers: { Authorization: apiKey, "X-Client-ID": clientId, "Content-Type": "application/json" } });
+  let response;
+  try {
+    response = await axios.request({ method, url: `${apiBaseUrl}${endpoint}`, params, data, timeout: 60000, responseType: "text", headers: { Authorization: apiKey, "X-Client-ID": clientId, "Content-Type": "application/json" } });
+  } catch (error) {
+    let payload;
+    try { payload = parsePayload(error.response?.data); } catch {}
+    throw providerError(payload, error.message);
+  }
   const payload = parsePayload(response.data);
-  if (!payload?.success) throw new Error(payload?.error?.message || "Get笔记接口返回失败");
+  if (!payload?.success) throw providerError(payload);
   return payload.data;
 }
 function hasContent(note) { return Boolean(String(note?.content || "").trim() || String(note?.web_page?.content || "").trim() || String(note?.audio?.original || "").trim()); }
@@ -87,7 +106,11 @@ async function processJob(crawlTask, taskId, job) {
     const created = await apiRequest("POST", "/resource/note/save", undefined, { note_type: "link", link_url: job.video_url });
     providerTaskId = String(created.task_id || created.tasks?.[0]?.task_id || "");
     directNoteId = String(created.note_id || "");
-    updateTranscriptJob(job.id, { provider_task_id: providerTaskId, note_id: directNoteId || null });
+    updateTranscriptJob(job.id, {
+      provider_task_id: providerTaskId,
+      note_id: directNoteId || null,
+      provider_started_at: new Date().toISOString(),
+    });
   }
   const { noteId, note } = await waitForNote(providerTaskId, directNoteId);
   const outputPath = saveNote(crawlTask, { ...job, provider_task_id: String(providerTaskId || "") }, note);
@@ -96,19 +119,24 @@ async function processJob(crawlTask, taskId, job) {
   appendLog(taskId, `完成云端链接解析：${job.video_id}`);
 }
 
+function prepareBatch({ crawlTaskId }) {
+  const crawlTask = getTask(crawlTaskId);
+  if (!crawlTask?.output_path || !fs.existsSync(crawlTask.output_path)) throw new Error("原始 JSON 不存在，无法继续转写");
+  const data = JSON.parse(fs.readFileSync(crawlTask.output_path, "utf8").replace(/^\uFEFF/, ""));
+  return { crawlTask, works: Array.isArray(data.works) ? data.works : [] };
+}
+
+async function processPreparedJob({ taskId, job, context }) {
+  await processJob(context.crawlTask, taskId, job);
+}
+
 const orchestrator = createTranscriptionBatchOrchestrator({
   provider: "getnotes",
   runningPhase: "云端链接全量批处理中",
   completedPhase: "云端链接全量转写完成",
   partialPhase: "云端链接部分失败，已保留成功结果",
-  prepare({ crawlTaskId }) {
-    const crawlTask = getTask(crawlTaskId);
-    if (!crawlTask?.output_path || !fs.existsSync(crawlTask.output_path)) throw new Error("原始 JSON 不存在，无法继续转写");
-    return { crawlTask };
-  },
-  async processJob({ taskId, job, context }) {
-    await processJob(context.crawlTask, taskId, job);
-  },
+  prepare: prepareBatch,
+  processJob: processPreparedJob,
 });
 
 function submit(crawlTaskId, videoIds) {
@@ -120,8 +148,11 @@ function submit(crawlTaskId, videoIds) {
   orchestrator.enqueue(taskId, crawlTaskId); return taskId;
 }
 module.exports = {
+  isQuotaExhaustedError,
   listTranscriptJobs,
   pause: orchestrator.pause,
+  prepareBatch,
+  processPreparedJob,
   recoverPending: orchestrator.recoverPending,
   resume: orchestrator.resume,
   retryFailed: orchestrator.retryFailed,

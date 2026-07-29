@@ -77,7 +77,7 @@ crawler emits structured progress event
 
 ### 双通道文本提取
 
-当前产品没有隐藏的“唯一主通道”。用户每次提交时手动选择云端链接提取或本地 Whisper，失败后不静默切换。
+当前产品没有隐藏的“唯一主通道”。用户每次提交时选择“云端优先”或“Whisper 优先”，系统只按已展示并确认的规则续接备用通道，批次总数不受 100 条限制。
 
 ```text
 User selects audited works
@@ -95,7 +95,7 @@ User selects audited works
 | Per-work state | Implemented | SQLite records provider, provider task ID, note ID, status, error, and output path. |
 | Text output | Implemented | Markdown is written below `raw\get-notes\<account>\<videoId>.md`. |
 | Real Get Notes API request from this new product | Externally verified | 2026-07-18: video `7663157184638105158` completed through `save -> progress -> detail`; Markdown and note ID `1915925745428633464` were retained locally. |
-| Automatic fallback | Explicitly prohibited | A Get Notes failure is recorded; it does not auto-download video or run Whisper. |
+| 优先级续接 | 已实现并自动化验证 | 云端额度耗尽后续接 Whisper；Whisper 图文或单条失败后续接云端；普通云端网络错误仍按有限重试处理。 |
 
 ### Viral Breakdown
 
@@ -113,7 +113,7 @@ User selects audited works
 
 `douyin-downloader` 只作为经验参考，不是本产品依赖。当前 Agent 已拥有独立的 Cookie 导出、媒体下载、FFmpeg、faster-whisper、模型、Python 环境、任务状态和产物目录。
 
-- 用户必须明确选择本地 Whisper，系统不会因云端失败自动切换。
+- 用户必须明确选择优先级；只有额度耗尽、图文路由或本地单条失败满足已确认规则时才切换通道。
 - 默认 CPU `int8`、单执行位，避免抢占本机资源。
 - 默认删除下载视频和临时音频，只保留 Markdown、JSON、SRT 与 manifest。
 - 爆款拆解和知识蒸馏优先使用 Whisper 时间轴原文；没有 Whisper 时使用云端原文。
@@ -174,6 +174,7 @@ User selects audited works
 | 2026-07-25 | 建立独立的本地 Whisper 通道。 | FFmpeg、faster-whisper small 模型、Python 3.12 虚拟环境和 yt-dlp 已收口到当前 Agent；`npm run doctor` 全部通过。 |
 | 2026-07-25 | 完成真实抖音视频本地转写闭环。 | 作品 `7562030607925120256` 已完成 Cookie 导出、下载、FFmpeg、Whisper、Markdown/JSON/SRT/manifest 落盘和 SQLite 状态更新。 |
 | 2026-07-25 | 增加双通道手动选择和设置中心。 | 页面提交时明确选择云端链接提取或本地 Whisper；作品展示实际通道；分析证据优先 Whisper。 |
+| 2026-07-29 | 将双通道升级为不限总数的优先级批处理。 | 云端优先在 100 条参考值或错误码 19 后续接 Whisper；Whisper 优先在图文或本地失败后续接云端；路由、配额和批处理测试通过。 |
 | 2026-07-18 | Added a persistent creator-distillation material pool. | Local SQLite schema, pool API empty-state check, and static checks passed; it does not invoke a model. |
 | 2026-07-18 | Installed three pinned reference skills and added a product-owned viral-breakdown runtime skill. | Runtime prompt now comes from the project repository and includes account-relative ranking, cross-work validation, evidence/inference separation, and explicit missing-data boundaries. No model request was made. |
 | 2026-07-18 | Expanded the project-local marketing reference library to the complete 47-skill `coreyhaines31/marketingskills` set. | Every upstream skill has a local `SKILL.md`; the bundle is pinned to commit `67264763cb107d61749f418d081c56e5bcbc0209` and remains separate from the product-owned runtime skill. |

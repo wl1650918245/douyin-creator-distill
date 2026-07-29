@@ -1,6 +1,6 @@
 {
   "selectionMode": "manual",
-  "defaultProvider": "getnotes",
+  "defaultProvider": "cloud-first",
   "cloudDailyReferenceLimit": 100,
   "whisper": {
     "model": "small",

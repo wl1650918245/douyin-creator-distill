@@ -228,16 +228,20 @@ const orchestrator = createTranscriptionBatchOrchestrator({
   completedPhase: "本地 Whisper 全量转写完成",
   partialPhase: "本地 Whisper 部分失败，已保留成功结果",
   prepare: prepareBatch,
-  async processJob({ taskId, job, context }) {
-    const work = context.works.find((entry) => String(entry.videoId) === String(job.video_id));
-    await processJob(taskId, context.crawlTask, work || {}, job, context.cookiesPath);
-  },
-  async cleanup({ taskId }) {
-    if (!loadTranscriptionConfig().whisper.retainDownloadedMedia) {
-      fs.rmSync(path.join(RUNTIME_DIR, "downloads", taskId), { recursive: true, force: true });
-    }
-  },
+  processJob: processPreparedJob,
+  cleanup: cleanupBatch,
 });
+
+async function processPreparedJob({ taskId, job, context }) {
+  const work = context.works.find((entry) => String(entry.videoId) === String(job.video_id));
+  await processJob(taskId, context.crawlTask, work || {}, job, context.cookiesPath);
+}
+
+async function cleanupBatch({ taskId }) {
+  if (!loadTranscriptionConfig().whisper.retainDownloadedMedia) {
+    fs.rmSync(path.join(RUNTIME_DIR, "downloads", taskId), { recursive: true, force: true });
+  }
+}
 
 function submit(crawlTaskId, videoIds) {
   assertRuntime();
@@ -276,7 +280,10 @@ function submit(crawlTaskId, videoIds) {
 }
 
 module.exports = {
+  cleanupBatch,
   pause: orchestrator.pause,
+  prepareBatch,
+  processPreparedJob,
   recoverPending: orchestrator.recoverPending,
   resume: orchestrator.resume,
   retryFailed: orchestrator.retryFailed,

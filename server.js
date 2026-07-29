@@ -6,6 +6,7 @@ const { KNOWLEDGE_ASSET_ROOT } = require("./src/config/runtime-config");
 const { resolveAccountRole } = require("./src/config/account-profiles");
 const { reaudit, submit, submitFavoritesSelection } = require("./src/services/directory-crawl-service");
 const cloudTranscription = require("./src/services/getnotes-transcription-service");
+const hybridTranscription = require("./src/services/hybrid-transcription-service");
 const localTranscription = require("./src/services/local-whisper-transcription-service");
 const { validateTranscriptionRequest } = require("./src/services/transcription-request-policy");
 const {
@@ -36,8 +37,8 @@ const { getSettings: getTranscriptionSettings, saveSettings: saveTranscriptionSe
 const { getAccountProfiles, launchAccountLogin, updateAccountProfiles } = require("./src/services/account-profile-service");
 
 const root = __dirname; const host = "127.0.0.1"; const port = Number(process.env.PORT || 8780);
-const API_VERSION = "2026-07-29.1";
-const API_CAPABILITIES = ["account-profiles", "directory-crawl", "directory-crawl-loop", "favorites-directory", "favorites-directory-cache", "subscriptions", "scheduled-incremental-checks", "text-extraction", "local-whisper", "transcription-batch-pause-resume", "transcription-batch-retry", "transcription-checkpoint-recovery", "viral-breakdown", "viral-report-history", "topic-advisor", "creator-agent", "creator-draft-review", "creator-transcript-assets"];
+const API_VERSION = "2026-07-29.2";
+const API_CAPABILITIES = ["account-profiles", "directory-crawl", "directory-crawl-loop", "favorites-directory", "favorites-directory-cache", "subscriptions", "scheduled-incremental-checks", "text-extraction", "local-whisper", "transcription-priority-fallback", "transcription-batch-pause-resume", "transcription-batch-retry", "transcription-checkpoint-recovery", "viral-breakdown", "viral-report-history", "topic-advisor", "creator-agent", "creator-draft-review", "creator-transcript-assets"];
 const types = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -68,7 +69,7 @@ function readJson(request) {
 }
 function openTranscriptFolder(taskId) {
   const task = getTask(taskId);
-  if (!task || !["getnotes", "whisper"].includes(task.summary?.provider)) throw new Error("该任务不是文本提取任务");
+  if (!task || !["getnotes", "whisper", "cloud-first", "whisper-first"].includes(task.summary?.provider)) throw new Error("该任务不是文本提取任务");
   const job = listTranscriptJobsForTask(taskId).find((entry) => entry.status === "completed" && entry.output_path && fs.existsSync(entry.output_path));
   if (!job) throw new Error("该转写任务尚无可定位的本地文件");
   const outputPath = path.resolve(job.output_path); const assetRoot = path.resolve(KNOWLEDGE_ASSET_ROOT); const rootPrefix = `${assetRoot}${path.sep}`.toLowerCase();
@@ -81,6 +82,7 @@ function transcriptionServiceForTask(taskId) {
   if (!task) throw new Error("转写任务不存在");
   if (task.summary?.provider === "whisper") return localTranscription;
   if (task.summary?.provider === "getnotes") return cloudTranscription;
+  if (["cloud-first", "whisper-first"].includes(task.summary?.provider)) return hybridTranscription;
   throw new Error("该任务不是可编排的转写批次");
 }
 function reportWithContent(reportId) {
@@ -176,10 +178,14 @@ http.createServer(async (request, response) => {
       return subscription ? json(response, 200, { deleted: true, subscription, assetsPreserved: true }) : json(response, 404, { error: "关注规则不存在" });
     }
     if (request.method === "POST" && url.pathname === "/api/transcriptions") {
-      const { crawlTaskId, videoIds, provider = "getnotes" } = await readJson(request);
+      const { crawlTaskId, videoIds, provider = "cloud-first" } = await readJson(request);
       const validationError = validateTranscriptionRequest({ crawlTaskId, videoIds, provider });
       if (validationError) return json(response, 400, { error: validationError });
-      const taskId = provider === "whisper" ? localTranscription.submit(crawlTaskId, videoIds) : cloudTranscription.submit(crawlTaskId, videoIds);
+      const taskId = provider === "whisper"
+        ? localTranscription.submit(crawlTaskId, videoIds)
+        : provider === "getnotes"
+          ? cloudTranscription.submit(crawlTaskId, videoIds)
+          : hybridTranscription.submit(crawlTaskId, videoIds, provider);
       return json(response, 202, { taskId, provider });
     }
     if (request.method === "POST" && /^\/api\/transcription-batches\/[^/]+\/pause$/.test(url.pathname)) {
@@ -224,7 +230,7 @@ http.createServer(async (request, response) => {
   response.writeHead(200, { "Content-Type": types[path.extname(filePath)] || "application/octet-stream", "Cache-Control": "no-store, max-age=0" }); fs.createReadStream(filePath).pipe(response);
 }).listen(port, host, () => {
   startSubscriptionScheduler();
-  const recovered = cloudTranscription.recoverPending() + localTranscription.recoverPending();
+  const recovered = cloudTranscription.recoverPending() + localTranscription.recoverPending() + hybridTranscription.recoverPending();
   console.log(`CreatorDistill: http://${host}:${port}`);
   if (recovered) console.log(`已从 SQLite 断点恢复 ${recovered} 个转写批次`);
 });

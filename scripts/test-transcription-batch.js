@@ -140,10 +140,35 @@ function testRestartRecovery() {
   fs.rmSync(restartRoot, { recursive: true, force: true });
 }
 
+function testCloudQuotaCounter() {
+  store.createTask("quota-crawl", "demo");
+  store.createTask("quota-batch", "云端优先转写 / demo");
+  store.updateTask("quota-batch", {
+    summary_json: JSON.stringify({ provider: "cloud-first", totalCount: 1 }),
+  });
+  store.createTranscriptJob({
+    id: "quota-job",
+    taskId: "quota-batch",
+    crawlTaskId: "quota-crawl",
+    videoId: "quota-video",
+    videoUrl: "https://example.com/quota",
+    title: "quota",
+    provider: "getnotes",
+  });
+  const now = new Date();
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+  store.updateTranscriptJob("quota-job", {
+    provider_task_id: "provider-task",
+    provider_started_at: now.toISOString(),
+  });
+  assert.equal(store.countCloudTranscriptJobsSince(dayStart), 1);
+}
+
 (async () => {
   try {
     await testFailureIsolationAndRetry();
     await testPauseAndResume();
+    testCloudQuotaCounter();
     testRestartRecovery();
     console.log("transcription batch orchestration tests passed");
   } finally {

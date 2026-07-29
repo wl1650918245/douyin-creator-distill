@@ -184,9 +184,9 @@
             <section class="history-card storage-card settings-card">
               <span class="section-label"><i></i>默认通道</span>
               <p>每次提交仍会弹窗让用户选择，这里只决定默认建议。</p>
-              <label class="settings-radio"><input type="radio" name="default-provider" value="getnotes" /> 云端链接提取</label>
-              <label class="settings-radio"><input type="radio" name="default-provider" value="whisper" /> 本地 Whisper</label>
-              <p>云端每日参考上限：<strong>100 条</strong>。Whisper 不受该额度限制，但占用本机算力并需要先下载视频。</p>
+              <label class="settings-radio"><input type="radio" name="default-provider" value="cloud-first" /> 云端优先，额度耗尽后续接 Whisper</label>
+              <label class="settings-radio"><input type="radio" name="default-provider" value="whisper-first" /> Whisper 优先，单条失败后续接云端</label>
+              <p>两种策略都不限制批次总数。云端每日参考上限：<strong>100 条</strong>；每条作品会记录实际使用的转写通道。</p>
             </section>
             <section class="history-card storage-card settings-card">
               <span class="section-label"><i></i>本地依赖诊断</span>
@@ -214,17 +214,17 @@
     </dialog>
     <dialog id="transcription-provider-dialog" class="provider-dialog">
       <form method="dialog">
-        <div class="provider-dialog-head"><span>选择本次转写通道</span><button value="cancel" aria-label="关闭">×</button></div>
-        <p>通道按本次任务选择，不会在失败后静默切换。</p>
-        <button class="provider-option" value="getnotes">
-          <strong>云端链接提取</strong>
-          <span>直接提交抖音链接；保留整理内容、音频原文和附件。每日参考上限 100 条。</span>
+        <div class="provider-dialog-head"><span>选择本次转写优先级</span><button value="cancel" aria-label="关闭">×</button></div>
+        <p>选择首选通道后，系统会按明确规则自动续接备用通道，批次总数不受 100 条限制。</p>
+        <button class="provider-option" value="cloud-first">
+          <strong>云端优先</strong>
+          <span>优先保留整理内容、音频原文和附件；达到每日参考额度或接口明确返回额度耗尽后，剩余视频自动改用本地 Whisper。</span>
         </button>
-        <button class="provider-option" value="whisper">
-          <strong>本地 Whisper</strong>
-          <span>作品总数不受 100 条限制；下载视频后逐条串行识别，生成时间轴、词级时间戳和 SRT。</span>
+        <button class="provider-option" value="whisper-first">
+          <strong>Whisper 优先</strong>
+          <span>优先生成原文、时间轴、词级时间戳和 SRT；图文作品或本地单条失败时自动改用云端。</span>
         </button>
-        <small>云端通道每次最多 100 条；图文作品只能使用云端链接提取；本地 Whisper 按单执行位串行处理。</small>
+        <small>单条失败不会中止整个批次；支持暂停、失败项重试和 SQLite 断点继续，成功作品不会重复执行。</small>
       </form>
     </dialog>
     <div id="app-toast" class="app-toast" role="status" aria-live="polite" hidden></div>

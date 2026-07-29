@@ -48,7 +48,7 @@ function getSettings() {
 
 function saveSettings(input) {
   const current = getSettings();
-  const defaultProvider = ["getnotes", "whisper"].includes(input.defaultProvider) ? input.defaultProvider : current.defaultProvider;
+  const defaultProvider = ["cloud-first", "whisper-first"].includes(input.defaultProvider) ? input.defaultProvider : current.defaultProvider;
   const transcription = {
     selectionMode: "manual",
     defaultProvider,
