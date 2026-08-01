@@ -353,6 +353,7 @@ catch (error) { console.error(`作品总账历史回填失败，主任务数据�
 
 function closeTaskStore() {
   db.close();
+  workLedger.closeWorkLedger();
 }
 
 module.exports = {

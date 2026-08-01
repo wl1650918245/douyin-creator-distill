@@ -6,6 +6,7 @@ const { RUNTIME_DIR, ensureDir } = require("../config/runtime-config");
 
 ensureDir(RUNTIME_DIR);
 const db = new DatabaseSync(path.join(RUNTIME_DIR, "agent-state.sqlite"));
+let closed = false;
 
 db.exec(`CREATE TABLE IF NOT EXISTS works (
   source_key TEXT NOT NULL,
@@ -239,7 +240,11 @@ function backfillStateLedger() {
   }
   return { runs: runs.length, worksImported, transcriptStates: visited.size };
 }
-function closeWorkLedger() { db.close(); }
+function closeWorkLedger() {
+  if (closed) return;
+  db.close();
+  closed = true;
+}
 
 module.exports = {
   backfillStateLedger,
