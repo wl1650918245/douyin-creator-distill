@@ -58,6 +58,22 @@ const baseUrl = process.env.TEST_BASE_URL || "http://127.0.0.1:8780";
       ]).id;
     });
     assert.equal(pendingTaskId, "unfinished-transcription");
+    const archiveSummary = await page.evaluate(() => creatorArchiveEntries([
+      { id: "crawl-1", source: "jianghushuo", status: "waiting_for_user", output_path: "C:\\assets\\jianghushuo.json", updated_at: "2026-08-01T12:00:00Z", summary: { totalCount: 639 } },
+      { id: "batch-1", source: "云端优先转写 / jianghushuo", status: "partial", updated_at: "2026-08-01T13:00:00Z", summary: { provider: "cloud-first", total: 639, completed: 317, failed: 322 } },
+    ], [
+      { task_id: "crawl-1", created_at: "2026-08-01T12:00:00Z" },
+    ], [
+      { task_id: "batch-1", crawl_task_id: "crawl-1", video_id: "video-1", status: "completed", updated_at: "2026-08-01T13:00:00Z" },
+      { task_id: "batch-1", crawl_task_id: "crawl-1", video_id: "video-1", status: "completed", updated_at: "2026-08-01T12:30:00Z" },
+      { task_id: "batch-1", crawl_task_id: "crawl-1", video_id: "video-2", status: "completed", updated_at: "2026-08-01T12:40:00Z" },
+      { task_id: "batch-1", crawl_task_id: "crawl-1", video_id: "video-3", status: "failed", updated_at: "2026-08-01T12:50:00Z" },
+    ], [
+      { id: "subscription-1", source_key: "creator:jianghushuo", source_type: "creator", source: "jianghushuo", updated_at: "2026-08-01T12:00:00Z" },
+    ])[0]);
+    assert.equal(archiveSummary.completedTranscripts, 2, "关注页应按作品 ID 去重统计已完成转写");
+    assert.equal(archiveSummary.pendingTranscription.id, "batch-1", "关注页应定位该博主最近的未完成批次");
+    assert.equal(archiveSummary.runCount, 1, "目录版本数量应来自抓取记录");
     assert.deepEqual(pageErrors, []);
     console.log("transcription priority ui ok");
   } finally {

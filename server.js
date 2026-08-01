@@ -79,6 +79,14 @@ function openTranscriptFolder(taskId) {
   folders.forEach((folder) => { const explorer = spawn("explorer.exe", [folder], { detached: true, stdio: "ignore", windowsHide: false }); explorer.unref(); });
   return folders;
 }
+function openTaskOutputFolder(taskId) {
+  const task = getTask(taskId);
+  if (!task?.output_path || !fs.existsSync(task.output_path)) throw new Error("该目录任务尚无可定位的原始 JSON");
+  const outputPath = path.resolve(task.output_path); const assetRoot = path.resolve(KNOWLEDGE_ASSET_ROOT); const rootPrefix = `${assetRoot}${path.sep}`.toLowerCase();
+  if (!outputPath.toLowerCase().startsWith(rootPrefix)) throw new Error("原始 JSON 不在知识资产目录中");
+  const folder = path.dirname(outputPath); const explorer = spawn("explorer.exe", [folder], { detached: true, stdio: "ignore", windowsHide: false }); explorer.unref();
+  return folder;
+}
 function transcriptionServiceForTask(taskId) {
   const task = getTask(taskId);
   if (!task) throw new Error("转写任务不存在");
@@ -133,7 +141,7 @@ http.createServer(async (request, response) => {
       const review = getAgentReview(url.pathname.split("/")[3]);
       return review ? json(response, 200, readArtifact(review)) : json(response, 404, { error: "稿件审阅记录不存在" });
     }
-    if (request.method === "GET" && url.pathname === "/api/transcript-jobs") return json(response, 200, { jobs: listTranscriptJobs(url.searchParams.get("crawlTaskId") || "") });
+    if (request.method === "GET" && url.pathname === "/api/transcript-jobs") return json(response, 200, { jobs: listTranscriptJobs(url.searchParams.get("crawlTaskId") || "", { all: url.searchParams.get("all") === "1" }) });
     if (request.method === "GET" && url.pathname === "/api/transcription-settings") return json(response, 200, getTranscriptionSettings());
     if (request.method === "GET" && url.pathname === "/api/account-profiles") return json(response, 200, getAccountProfiles());
     if (request.method === "GET" && url.pathname === "/api/favorites-directory-cache") {
@@ -207,6 +215,7 @@ http.createServer(async (request, response) => {
     if (request.method === "POST" && /^\/api\/account-profiles\/(content|favorites)\/login$/.test(url.pathname)) return json(response, 202, launchAccountLogin(url.pathname.split("/")[3]));
     if (request.method === "POST" && url.pathname === "/api/distillation-pool") { const { crawlTaskId, videoIds } = await readJson(request); const task = getTask(crawlTaskId); const completed = new Set(listTranscriptJobs(crawlTaskId).filter((job) => job.status === "completed").map((job) => String(job.video_id))); if (!task || task.status !== "waiting_for_user" || !Array.isArray(videoIds) || !videoIds.length || videoIds.some((id) => !completed.has(String(id)))) return json(response, 400, { error: "只能将已审核且已完成转写的作品加入蒸馏素材池" }); return json(response, 201, { sources: addDistillationSources(crawlTaskId, [...new Set(videoIds.map(String))]) }); }
     if (request.method === "POST" && /^\/api\/tasks\/[^/]+\/open-transcript-folder$/.test(url.pathname)) { const taskId = url.pathname.split("/")[3]; const folders = openTranscriptFolder(taskId); return json(response, 200, { ok: true, folder: folders[0], folders }); }
+    if (request.method === "POST" && /^\/api\/tasks\/[^/]+\/open-output-folder$/.test(url.pathname)) return json(response, 200, { ok: true, folder: openTaskOutputFolder(url.pathname.split("/")[3]) });
     if (request.method === "POST" && /^\/api\/viral-reports\/[^/]+\/open-folder$/.test(url.pathname)) return json(response, 200, { ok: true, folder: openViralReportFolder(url.pathname.split("/")[3]) });
     if (request.method === "POST" && url.pathname === "/api/viral-breakdowns") { const { crawlTaskId, videoIds } = await readJson(request); if (typeof crawlTaskId !== "string" || !Array.isArray(videoIds) || !videoIds.length || videoIds.length > MAX_WORKS_PER_REPORT) return json(response, 400, { error: `请选择 1 至 ${MAX_WORKS_PER_REPORT} 条已转写作品后再拆解` }); return json(response, 202, submitViralBreakdown({ crawlTaskId, videoIds })); }
     if (request.method === "POST" && url.pathname === "/api/topic-batches") {

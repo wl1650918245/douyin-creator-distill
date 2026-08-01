@@ -1084,18 +1084,29 @@ function creatorArchiveEntries(tasks, runs, transcriptJobs, subscriptions) {
   return subscriptions.map((subscription) => {
     const latest = latestByKey.get(subscription.source_key) || null;
     const relatedRuns = runs.filter((run) => taskSourceKey(tasksById.get(run.task_id)) === subscription.source_key);
+    const relatedJobs = transcriptJobs.filter((job) => taskSourceKey(tasksById.get(job.crawl_task_id)) === subscription.source_key);
     const transcriptsByVideo = new Map();
-    transcriptJobs.filter((job) => job.status === "completed" && taskSourceKey(tasksById.get(job.crawl_task_id)) === subscription.source_key).forEach((job) => {
+    relatedJobs.filter((job) => job.status === "completed").forEach((job) => {
       if (!transcriptsByVideo.has(String(job.video_id))) transcriptsByVideo.set(String(job.video_id), job);
     });
-    const transcripts = [...transcriptsByVideo.values()];
-    return { source: subscription.source_key, subscription, latest, runCount: relatedRuns.length, completedTranscripts: transcripts.length, relatedRuns, transcripts };
+    const transcripts = [...transcriptsByVideo.values()].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+    const relatedBatchIds = new Set(relatedJobs.map((job) => job.task_id));
+    const pendingTranscription = tasks
+      .filter((task) => relatedBatchIds.has(task.id) && isGetNotesTask(task) && (["queued", "running", "pausing", "paused"].includes(task.status) || (Number(task.summary?.failed || 0) > 0 && ["partial", "failed", "interrupted_recoverable"].includes(task.status))))
+      .sort((a, b) => {
+        const activeDifference = Number(["queued", "running", "pausing", "paused"].includes(b.status)) - Number(["queued", "running", "pausing", "paused"].includes(a.status));
+        if (activeDifference) return activeDifference;
+        const remainingA = Math.max(0, Number(a.summary?.totalCount || a.summary?.total || 0) - Number(a.summary?.completed || 0));
+        const remainingB = Math.max(0, Number(b.summary?.totalCount || b.summary?.total || 0) - Number(b.summary?.completed || 0));
+        return remainingB - remainingA || new Date(b.updated_at) - new Date(a.updated_at);
+      })[0] || null;
+    return { source: subscription.source_key, subscription, latest, runCount: relatedRuns.length, completedTranscripts: transcripts.length, relatedRuns, transcripts, pendingTranscription };
   }).sort((a, b) => Number(a.subscription.source_type === "favorites") - Number(b.subscription.source_type === "favorites") || new Date(b.subscription.updated_at) - new Date(a.subscription.updated_at));
 }
 function renderCreatorArchive(creators, force = false) {
   archiveCreators = creators;
   if (!creators.some((entry) => entry.source === selectedCreatorSource)) selectedCreatorSource = creators[0]?.source || "";
-  const signature = JSON.stringify([selectedCreatorSource, creators.map((entry) => [entry.source, entry.subscription.updated_at, entry.subscription.enabled, entry.subscription.next_check_at, entry.latest?.updated_at, entry.runCount, entry.completedTranscripts])]);
+  const signature = JSON.stringify([selectedCreatorSource, creators.map((entry) => [entry.source, entry.subscription.updated_at, entry.subscription.enabled, entry.subscription.next_check_at, entry.latest?.updated_at, entry.runCount, entry.completedTranscripts, entry.pendingTranscription?.updated_at, entry.pendingTranscription?.summary])]);
   if (!force && signature === lastCreatorArchiveSignature) return;
   lastCreatorArchiveSignature = signature;
   const list = document.querySelector("#creator-archive-list"); const detail = document.querySelector("#creator-archive-detail");
@@ -1109,13 +1120,21 @@ function renderCreatorArchive(creators, force = false) {
     return `<div class="creator-list-row"><button class="creator-list-button${active ? " is-active" : ""}" type="button" data-creator-select="${escapeHtml(source)}" aria-pressed="${active}">${avatarMarkup(isFavorites ? "" : latest?.creator_avatar_url, isFavorites ? "藏" : creator.slice(0, 1), "creator-list-avatar")}<span><strong>${escapeHtml(creator)}</strong><small>${isFavorites ? "我的收藏夹" : `博主 · ${escapeHtml(subscription.source)}`}</small></span><i class="${subscription.enabled ? "" : "is-paused"}"></i></button><button class="creator-remove-button" type="button" data-subscription-delete="${escapeHtml(subscription.id)}" aria-label="取消关注 ${escapeHtml(creator)}" title="取消关注，不删除历史资产">×</button></div>`;
   }).join("");
   const selected = creators.find((entry) => entry.source === selectedCreatorSource) || creators[0];
-  const { source, subscription, latest, runCount, completedTranscripts, relatedRuns, transcripts } = selected;
+  const { source, subscription, latest, runCount, completedTranscripts, relatedRuns, transcripts, pendingTranscription } = selected;
   const isFavorites = subscription.source_type === "favorites"; const creator = subscription.display_name || (isFavorites ? "我的收藏夹" : subscription.source); const isReview = latest?.status === "partial"; const total = Number(latest?.summary?.totalCount || subscription.lastResult?.totalCount || 0); const warningCount = Number(latest?.summary?.warningCount || 0);
   const recentRuns = relatedRuns.slice(0, 5).map((run) => `<div class="creator-run-item"><span>${formatTime(run.created_at)}</span><strong>${formatNumber(run.total_count)} 条</strong><small class="${run.audit_status === "passed" ? "is-ready" : "is-review"}">${run.audit_status === "passed" ? "审核通过" : "待复核"}</small></div>`).join("") || '<p class="creator-detail-empty">暂无历史抓取记录</p>';
   const transcriptItems = transcripts.slice(0, 8).map((job) => `<div class="creator-transcript-item"><div><strong>${escapeHtml(job.title || `作品 ${job.video_id}`)}</strong><small>${escapeHtml(job.video_id)} · ${formatTime(job.updated_at)}</small></div><button type="button" data-creator-transcript-folder="${escapeHtml(job.task_id)}">打开文件夹</button></div>`).join("") || '<p class="creator-detail-empty">该来源暂无已完成转写</p>';
   const intervalOptions = [[360, "每 6 小时"], [720, "每 12 小时"], [1440, "每天"], [10080, "每周"]].map(([minutes, label]) => `<option value="${minutes}"${Number(subscription.check_interval_minutes) === minutes ? " selected" : ""}>${label}</option>`).join("");
   const result = subscription.lastResult ? `上次发现新增 ${formatNumber(subscription.lastResult.newCount || 0)} 条，当前 ${formatNumber(subscription.lastResult.totalCount || 0)} 条` : "尚未完成自动增量检查";
-  detail.innerHTML = `<div class="creator-detail-hero"><div class="creator-detail-identity">${avatarMarkup(isFavorites ? "" : latest?.creator_avatar_url, isFavorites ? "藏" : creator.slice(0, 1), "creator-detail-avatar")}<div><small>${isFavorites ? "我的收藏夹" : "关注博主"}</small><h2>${escapeHtml(creator)}</h2><code>${isFavorites ? `收藏夹账号 · ${escapeHtml(subscription.profile_id || "-")}` : `抖音号 ${escapeHtml(subscription.source)}`}</code></div></div><div class="creator-detail-actions"><span class="task-status ${subscription.enabled ? "ready" : "queued"}">${subscription.enabled ? "定期检查已开启" : "定期检查已暂停"}</span>${latest ? `<button class="primary-button" type="button" data-creator-open="${escapeHtml(latest.id)}" data-creator-status="${escapeHtml(latest.status)}" data-creator-source="${escapeHtml(subscription.source)}">${isReview ? "查看待复核目录" : "打开作品目录"}</button>` : ""}</div></div><section class="subscription-control"><div><span>更新频率</span><select data-subscription-interval="${escapeHtml(subscription.id)}">${intervalOptions}</select></div><div><span>下次检查</span><strong>${subscription.enabled ? formatTime(subscription.next_check_at) : "已暂停"}</strong></div><div><span>最近结果</span><strong>${escapeHtml(subscription.last_error || result)}</strong></div><div class="subscription-actions"><button class="outline-button" type="button" data-subscription-check="${escapeHtml(subscription.id)}">立即检查</button><button class="text-button" type="button" data-subscription-toggle="${escapeHtml(subscription.id)}" data-enabled="${subscription.enabled}">${subscription.enabled ? "暂停更新" : "恢复更新"}</button><button class="text-button danger" type="button" data-subscription-delete="${escapeHtml(subscription.id)}">取消关注</button></div></section><div class="creator-detail-stats"><article><span>最新目录</span><strong>${formatNumber(total)}</strong><small>条作品</small></article><article><span>抓取归档</span><strong>${formatNumber(runCount)}</strong><small>次记录</small></article><article><span>完成转写</span><strong>${formatNumber(completedTranscripts)}</strong><small>条文本</small></article></div><div class="creator-detail-grid"><section><div class="creator-detail-heading"><span>最新资产</span><small>${formatTime(latest?.updated_at)}</small></div><dl class="creator-asset-meta"><div><dt>JSON 审核</dt><dd>${!latest ? "暂无目录" : isReview ? "待复核" : warningCount ? `通过（${warningCount} 条警告）` : "通过"}</dd></div><div><dt>目录规模</dt><dd>${formatNumber(total)} 条</dd></div><div><dt>本地文件</dt><dd title="${escapeHtml(latest?.output_path || subscription.baseline_output_path || "")}">${escapeHtml(latest?.output_path || subscription.baseline_output_path || "尚未生成")}</dd></div></dl></section><section><div class="creator-detail-heading"><span>最近抓取</span><small>最近 5 次</small></div><div class="creator-run-list">${recentRuns}</div></section><section class="creator-transcript-section"><div class="creator-detail-heading"><span>已转写作品</span><small>共 ${formatNumber(completedTranscripts)} 条，显示最近 8 条</small></div><div class="creator-transcript-list">${transcriptItems}</div></section></div><p id="archive-storage-note" class="creator-detail-root">知识资产根目录：<code data-asset-root>${escapeHtml(storageRoots[storageMode])}</code></p>`;
+  const pendingSummary = pendingTranscription?.summary || {}; const pendingTotal = Number(pendingSummary.totalCount || pendingSummary.total || 0); const pendingCompleted = Number(pendingSummary.completed || 0); const pendingRemaining = Math.max(0, pendingTotal - pendingCompleted, Number(pendingSummary.failed || 0) + Number(pendingSummary.queued || 0) + Number(pendingSummary.running || 0));
+  const transcriptionActive = pendingTranscription && ["queued", "running", "pausing"].includes(pendingTranscription.status); const transcriptionPaused = pendingTranscription?.status === "paused";
+  const primaryTranscriptionAction = !pendingTranscription ? "" : transcriptionActive
+    ? `<button class="primary-button" type="button" data-creator-task-center>查看实时进度</button>`
+    : transcriptionPaused
+      ? `<button class="primary-button" type="button" data-creator-transcription-resume="${escapeHtml(pendingTranscription.id)}">继续剩余 ${formatNumber(pendingRemaining)} 条</button>`
+      : `<button class="primary-button" type="button" data-creator-transcription-retry="${escapeHtml(pendingTranscription.id)}">继续剩余 ${formatNumber(pendingRemaining)} 条</button>`;
+  const continuation = pendingTranscription ? `<section class="creator-continuation${transcriptionActive ? " is-active" : ""}"><div><small>${transcriptionActive ? "批处理正在继续" : transcriptionPaused ? "批处理已暂停" : "上次批处理未完成"}</small><strong>总计 ${formatNumber(pendingTotal)} · 已完成 ${formatNumber(pendingCompleted)} · 剩余 ${formatNumber(pendingRemaining)}</strong><span>${transcriptionActive ? "系统正在从 SQLite 断点继续，页面会自动同步进度。" : "继续时只处理未完成作品，已成功内容不会重复转写。"}</span></div><div>${primaryTranscriptionAction}${pendingCompleted ? `<button class="outline-button" type="button" data-creator-transcript-folder="${escapeHtml(pendingTranscription.id)}">打开全部转写位置</button>` : ""}</div></section>` : "";
+  detail.innerHTML = `<div class="creator-detail-hero"><div class="creator-detail-identity">${avatarMarkup(isFavorites ? "" : latest?.creator_avatar_url, isFavorites ? "藏" : creator.slice(0, 1), "creator-detail-avatar")}<div><small>${isFavorites ? "我的收藏夹" : "关注博主"}</small><h2>${escapeHtml(creator)}</h2><code>${isFavorites ? `收藏夹账号 · ${escapeHtml(subscription.profile_id || "-")}` : `抖音号 ${escapeHtml(subscription.source)}`}</code></div></div><div class="creator-detail-actions"><span class="task-status ${subscription.enabled ? "ready" : "queued"}">${subscription.enabled ? "定期检查已开启" : "定期检查已暂停"}</span>${latest ? `<button class="outline-button" type="button" data-creator-output-folder="${escapeHtml(latest.id)}">打开原始文件夹</button><button class="primary-button" type="button" data-creator-open="${escapeHtml(latest.id)}" data-creator-status="${escapeHtml(latest.status)}" data-creator-source="${escapeHtml(subscription.source)}">${isReview ? "查看待复核目录" : "打开作品目录"}</button>` : ""}</div></div><section class="subscription-control"><div><span>更新频率</span><select data-subscription-interval="${escapeHtml(subscription.id)}">${intervalOptions}</select></div><div><span>下次检查</span><strong>${subscription.enabled ? formatTime(subscription.next_check_at) : "已暂停"}</strong></div><div><span>最近结果</span><strong>${escapeHtml(subscription.last_error || result)}</strong></div><div class="subscription-actions"><button class="outline-button" type="button" data-subscription-check="${escapeHtml(subscription.id)}">立即检查</button><button class="text-button" type="button" data-subscription-toggle="${escapeHtml(subscription.id)}" data-enabled="${subscription.enabled}">${subscription.enabled ? "暂停更新" : "恢复更新"}</button><button class="text-button danger" type="button" data-subscription-delete="${escapeHtml(subscription.id)}">取消关注</button></div></section>${continuation}<div class="creator-detail-stats"><article><span>最新目录</span><strong>${formatNumber(total)}</strong><small>条作品</small></article><article><span>目录版本</span><strong>${formatNumber(runCount)}</strong><small>次抓取</small></article><article><span>完成转写</span><strong>${formatNumber(completedTranscripts)}</strong><small>条唯一作品</small></article></div><div class="creator-detail-grid"><section><div class="creator-detail-heading"><span>最新资产</span><small>${formatTime(latest?.updated_at)}</small></div><dl class="creator-asset-meta"><div><dt>JSON 审核</dt><dd>${!latest ? "暂无目录" : isReview ? "待复核" : warningCount ? `通过（${warningCount} 条警告）` : "通过"}</dd></div><div><dt>目录规模</dt><dd>${formatNumber(total)} 条</dd></div><div><dt>本地文件</dt><dd title="${escapeHtml(latest?.output_path || subscription.baseline_output_path || "")}">${escapeHtml(latest?.output_path || subscription.baseline_output_path || "尚未生成")}</dd></div></dl></section><section><div class="creator-detail-heading"><span>最近抓取</span><small>最近 5 次</small></div><div class="creator-run-list">${recentRuns}</div></section><section class="creator-transcript-section"><div class="creator-detail-heading"><span>已转写作品</span><small>共 ${formatNumber(completedTranscripts)} 条，显示最近 8 条</small></div><div class="creator-transcript-list">${transcriptItems}</div></section></div><p id="archive-storage-note" class="creator-detail-root">知识资产根目录：<code data-asset-root>${escapeHtml(storageRoots[storageMode])}</code></p>`;
 }
 function taskAccountContext(task) {
   if (!task.account_role && !task.profile_id) return "";
@@ -1124,7 +1143,7 @@ function taskAccountContext(task) {
 }
 async function refreshRuntimeViews() {
   try {
-    const [tasksResponse, runsResponse, transcriptsResponse, subscriptionsResponse] = await Promise.all([fetch("/api/tasks"), fetch("/api/runs"), fetch("/api/transcript-jobs"), fetch("/api/subscriptions")]);
+    const [tasksResponse, runsResponse, transcriptsResponse, subscriptionsResponse] = await Promise.all([fetch("/api/tasks"), fetch("/api/runs"), fetch("/api/transcript-jobs?all=1"), fetch("/api/subscriptions")]);
     if (!tasksResponse.ok || !runsResponse.ok || !transcriptsResponse.ok || !subscriptionsResponse.ok) return;
     const { tasks } = await tasksResponse.json(); const { runs } = await runsResponse.json(); const { jobs: transcriptJobs } = await transcriptsResponse.json(); const { subscriptions } = await subscriptionsResponse.json(); latestTasksById = new Map(tasks.map((task) => [task.id, task]));
     if (!hasHydratedWorks) {
@@ -1438,11 +1457,24 @@ document.querySelector("#archive-view").addEventListener("click", async (event) 
   const openButton = event.target.closest("[data-creator-open]");
   const selectButton = event.target.closest("[data-creator-select]");
   const transcriptButton = event.target.closest("[data-creator-transcript-folder]");
+  const retryTranscriptionButton = event.target.closest("[data-creator-transcription-retry]");
+  const resumeTranscriptionButton = event.target.closest("[data-creator-transcription-resume]");
+  const taskCenterButton = event.target.closest("[data-creator-task-center]");
+  const outputFolderButton = event.target.closest("[data-creator-output-folder]");
   const checkButton = event.target.closest("[data-subscription-check]");
   const toggleButton = event.target.closest("[data-subscription-toggle]");
   const deleteButton = event.target.closest("[data-subscription-delete]");
   if (selectButton) { selectedCreatorSource = selectButton.dataset.creatorSelect; renderCreatorArchive(archiveCreators, true); }
   if (openButton) await showTaskDirectory(openButton.dataset.creatorOpen, openButton.dataset.creatorStatus, openButton.dataset.creatorSource);
+  if (retryTranscriptionButton) await controlTranscriptionBatch(retryTranscriptionButton.dataset.creatorTranscriptionRetry, "retry-failed");
+  if (resumeTranscriptionButton) await controlTranscriptionBatch(resumeTranscriptionButton.dataset.creatorTranscriptionResume, "resume");
+  if (taskCenterButton) setActiveView("tasks");
+  if (outputFolderButton) {
+    try {
+      const response = await fetch(`/api/tasks/${encodeURIComponent(outputFolderButton.dataset.creatorOutputFolder)}/open-output-folder`, { method: "POST" }); const payload = await response.json();
+      showToast(response.ok ? "已打开原始 JSON 所在文件夹。" : payload.error || "无法打开原始文件夹。", response.ok ? "success" : "review");
+    } catch (error) { showToast(`无法打开原始文件夹：${scrubProviderName(error.message)}`, "review"); }
+  }
   if (checkButton) {
     try {
       const response = await fetch(`/api/subscriptions/${encodeURIComponent(checkButton.dataset.subscriptionCheck)}/check`, { method: "POST" }); const payload = await response.json();

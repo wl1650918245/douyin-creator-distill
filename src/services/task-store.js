@@ -140,7 +140,13 @@ function listRuns() { return db.prepare("SELECT * FROM crawl_runs ORDER BY creat
 function createTranscriptJob(job) { const time = now(); db.prepare("INSERT INTO transcript_jobs (id,task_id,crawl_task_id,video_id,video_url,title,provider,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)").run(job.id, job.taskId, job.crawlTaskId, job.videoId, job.videoUrl, job.title, job.provider, "queued", time, time); return getTranscriptJob(job.id); }
 function updateTranscriptJob(id, fields) { const entries = Object.entries({ ...fields, updated_at: now() }); const sets = entries.map(([key]) => `${key}=?`).join(", "); db.prepare(`UPDATE transcript_jobs SET ${sets} WHERE id=?`).run(...entries.map(([, value]) => value), id); return getTranscriptJob(id); }
 function getTranscriptJob(id) { return db.prepare("SELECT * FROM transcript_jobs WHERE id=?").get(id) || null; }
-function listTranscriptJobs(crawlTaskId) { const sql = crawlTaskId ? "SELECT * FROM transcript_jobs WHERE crawl_task_id=? ORDER BY created_at DESC" : "SELECT * FROM transcript_jobs ORDER BY created_at DESC LIMIT 500"; return crawlTaskId ? db.prepare(sql).all(crawlTaskId) : db.prepare(sql).all(); }
+function listTranscriptJobs(crawlTaskId, options = {}) {
+  if (crawlTaskId) return db.prepare("SELECT * FROM transcript_jobs WHERE crawl_task_id=? ORDER BY created_at DESC").all(crawlTaskId);
+  const sql = options.all
+    ? "SELECT * FROM transcript_jobs ORDER BY created_at DESC"
+    : "SELECT * FROM transcript_jobs ORDER BY created_at DESC LIMIT 500";
+  return db.prepare(sql).all();
+}
 function listTranscriptJobsForTask(taskId) { return db.prepare("SELECT * FROM transcript_jobs WHERE task_id=? ORDER BY created_at ASC").all(taskId); }
 function listRecoverableTranscriptTasks(provider) {
   return db.prepare(`SELECT DISTINCT tasks.* FROM tasks
