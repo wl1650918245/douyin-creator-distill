@@ -34,6 +34,30 @@ const baseUrl = process.env.TEST_BASE_URL || "http://127.0.0.1:8780";
     assert.equal(await page.locator('input[name="default-provider"][value="cloud-first"]').isChecked(), true);
     assert.deepEqual(await page.locator("#transcription-provider-dialog .provider-option").evaluateAll((buttons) => buttons.map((button) => button.value)), ["cloud-first", "whisper-first"]);
     assert.match(await page.locator("#transcription-provider-dialog").innerText(), /批次总数不受 100 条限制/);
+    const retryMarkup = await page.evaluate(() => transcriptionTaskActions({
+      id: "partial-batch",
+      status: "partial",
+      summary: { provider: "cloud-first", totalCount: 639, completed: 317, failed: 322 },
+    }));
+    assert.match(retryMarkup, /继续剩余 322 条/);
+    assert.match(retryMarkup, /打开全部转写位置/);
+    await page.evaluate(() => renderSourceProgress({
+      id: "partial-batch",
+      source: "云端优先转写 / jianghushuo",
+      status: "partial",
+      error_message: "322 条作品失败；其余作品已保留",
+      summary: { provider: "cloud-first", totalCount: 639, completed: 317, failed: 322 },
+    }));
+    assert.match(await page.locator("#source-progress").innerText(), /总计 639 条.*已完成 317.*剩余 322/s);
+    assert.equal(await page.locator('#source-progress [data-transcription-retry="partial-batch"]').innerText(), "继续剩余 322 条");
+    const pendingTaskId = await page.evaluate(() => {
+      activeSourceTaskId = "";
+      return sourceProgressTask([
+        { id: "latest-directory", source: "feitianshanke", status: "waiting_for_user", summary: { totalCount: 81 } },
+        { id: "unfinished-transcription", source: "云端优先转写 / jianghushuo", status: "partial", summary: { provider: "cloud-first", totalCount: 639, completed: 317, failed: 322 } },
+      ]).id;
+    });
+    assert.equal(pendingTaskId, "unfinished-transcription");
     assert.deepEqual(pageErrors, []);
     console.log("transcription priority ui ok");
   } finally {

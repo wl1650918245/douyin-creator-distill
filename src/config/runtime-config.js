@@ -14,6 +14,7 @@ const CREATOR_AGENTS_DIR = path.join(KNOWLEDGE_ASSET_ROOT, "agents");
 const RUNTIME_DIR = path.join(KNOWLEDGE_ASSET_ROOT, ".runtime");
 const PROFILE_LOCKS_DIR = path.join(RUNTIME_DIR, "profile-locks");
 const PROCESSED_VIDEOS_STATE_FILE = path.join(RUNTIME_DIR, "processed-video-ids.json");
+const activeProfileLocks = new Map();
 
 const DEFAULT_CHROME_USER_DATA_DIR = path.join(
   process.env.LOCALAPPDATA || "",
@@ -88,27 +89,50 @@ function acquireProfileLock(profilePath) {
   const resolvedProfilePath = path.resolve(profilePath);
   const fingerprint = crypto.createHash("sha1").update(resolvedProfilePath).digest("hex");
   const lockFile = path.join(PROFILE_LOCKS_DIR, `${fingerprint}.lock.json`);
-  const payload = { pid: process.pid, acquiredAt: new Date().toISOString(), profilePath: resolvedProfilePath };
+  const lockId = crypto.randomUUID();
+  const payload = { pid: process.pid, lockId, acquiredAt: new Date().toISOString(), profilePath: resolvedProfilePath };
 
   try {
     fs.writeFileSync(lockFile, JSON.stringify(payload, null, 2), { encoding: "utf8", flag: "wx" });
   } catch (error) {
     if (error.code !== "EEXIST") throw error;
     const existing = loadJsonFile(lockFile, null);
-    if (!existing?.pid || isProcessAlive(existing.pid)) {
+    const activeLockId = activeProfileLocks.get(lockFile);
+    const ownedByActiveOperation = existing?.pid === process.pid && activeLockId && existing.lockId === activeLockId;
+    if (ownedByActiveOperation || (existing?.pid && existing.pid !== process.pid && isProcessAlive(existing.pid))) {
       const holder = existing?.pid ? `PID ${existing.pid}` : "another process";
-      throw new Error(`Chrome profile is already in use by ${holder}. Run Douyin crawl tasks serially for this profile.`);
+      const busyError = new Error(`Chrome profile is already in use by ${holder}. Run Douyin crawl tasks serially for this profile.`);
+      busyError.code = "PROFILE_LOCK_BUSY";
+      throw busyError;
     }
     fs.unlinkSync(lockFile);
     fs.writeFileSync(lockFile, JSON.stringify(payload, null, 2), { encoding: "utf8", flag: "wx" });
   }
+  activeProfileLocks.set(lockFile, lockId);
 
   return {
     release() {
       const existing = loadJsonFile(lockFile, null);
-      if (!existing || existing.pid === process.pid) fs.rmSync(lockFile, { force: true });
+      if (fs.existsSync(lockFile) && (!existing || (existing.pid === process.pid && existing.lockId === lockId))) {
+        fs.unlinkSync(lockFile);
+      }
+      if (activeProfileLocks.get(lockFile) === lockId) activeProfileLocks.delete(lockFile);
     },
   };
+}
+
+async function acquireProfileLockWithRetry(profilePath, options = {}) {
+  const timeoutMs = Number(options.timeoutMs || 120000);
+  const retryIntervalMs = Number(options.retryIntervalMs || 1000);
+  const deadline = Date.now() + timeoutMs;
+  while (true) {
+    try {
+      return acquireProfileLock(profilePath);
+    } catch (error) {
+      if (error.code !== "PROFILE_LOCK_BUSY" || Date.now() >= deadline) throw error;
+      await new Promise((resolve) => setTimeout(resolve, retryIntervalMs));
+    }
+  }
 }
 
 function resolveChromeProfile(profilePath) {
@@ -159,6 +183,7 @@ module.exports = {
   RUNTIME_DIR,
   TEMP_CHROME_PROFILE,
   acquireProfileLock,
+  acquireProfileLockWithRetry,
   buildChromeLaunchArgs,
   ensureDir,
   findChromePath,

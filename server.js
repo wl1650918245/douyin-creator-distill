@@ -70,12 +70,14 @@ function readJson(request) {
 function openTranscriptFolder(taskId) {
   const task = getTask(taskId);
   if (!task || !["getnotes", "whisper", "cloud-first", "whisper-first"].includes(task.summary?.provider)) throw new Error("该任务不是文本提取任务");
-  const job = listTranscriptJobsForTask(taskId).find((entry) => entry.status === "completed" && entry.output_path && fs.existsSync(entry.output_path));
-  if (!job) throw new Error("该转写任务尚无可定位的本地文件");
-  const outputPath = path.resolve(job.output_path); const assetRoot = path.resolve(KNOWLEDGE_ASSET_ROOT); const rootPrefix = `${assetRoot}${path.sep}`.toLowerCase();
-  if (!outputPath.toLowerCase().startsWith(rootPrefix)) throw new Error("转写文件不在知识资产目录中");
-  const folder = path.dirname(outputPath); const explorer = spawn("explorer.exe", [folder], { detached: true, stdio: "ignore", windowsHide: false }); explorer.unref();
-  return folder;
+  const assetRoot = path.resolve(KNOWLEDGE_ASSET_ROOT); const rootPrefix = `${assetRoot}${path.sep}`.toLowerCase();
+  const folders = [...new Set(listTranscriptJobsForTask(taskId)
+    .filter((entry) => entry.status === "completed" && entry.output_path && fs.existsSync(entry.output_path))
+    .map((entry) => path.resolve(path.dirname(entry.output_path))))];
+  if (!folders.length) throw new Error("该转写任务尚无可定位的本地文件");
+  if (folders.some((folder) => !folder.toLowerCase().startsWith(rootPrefix))) throw new Error("转写文件不在知识资产目录中");
+  folders.forEach((folder) => { const explorer = spawn("explorer.exe", [folder], { detached: true, stdio: "ignore", windowsHide: false }); explorer.unref(); });
+  return folders;
 }
 function transcriptionServiceForTask(taskId) {
   const task = getTask(taskId);
@@ -204,7 +206,7 @@ http.createServer(async (request, response) => {
     if (request.method === "POST" && url.pathname === "/api/account-profiles") return json(response, 200, updateAccountProfiles(await readJson(request)));
     if (request.method === "POST" && /^\/api\/account-profiles\/(content|favorites)\/login$/.test(url.pathname)) return json(response, 202, launchAccountLogin(url.pathname.split("/")[3]));
     if (request.method === "POST" && url.pathname === "/api/distillation-pool") { const { crawlTaskId, videoIds } = await readJson(request); const task = getTask(crawlTaskId); const completed = new Set(listTranscriptJobs(crawlTaskId).filter((job) => job.status === "completed").map((job) => String(job.video_id))); if (!task || task.status !== "waiting_for_user" || !Array.isArray(videoIds) || !videoIds.length || videoIds.some((id) => !completed.has(String(id)))) return json(response, 400, { error: "只能将已审核且已完成转写的作品加入蒸馏素材池" }); return json(response, 201, { sources: addDistillationSources(crawlTaskId, [...new Set(videoIds.map(String))]) }); }
-    if (request.method === "POST" && /^\/api\/tasks\/[^/]+\/open-transcript-folder$/.test(url.pathname)) { const taskId = url.pathname.split("/")[3]; return json(response, 200, { ok: true, folder: openTranscriptFolder(taskId) }); }
+    if (request.method === "POST" && /^\/api\/tasks\/[^/]+\/open-transcript-folder$/.test(url.pathname)) { const taskId = url.pathname.split("/")[3]; const folders = openTranscriptFolder(taskId); return json(response, 200, { ok: true, folder: folders[0], folders }); }
     if (request.method === "POST" && /^\/api\/viral-reports\/[^/]+\/open-folder$/.test(url.pathname)) return json(response, 200, { ok: true, folder: openViralReportFolder(url.pathname.split("/")[3]) });
     if (request.method === "POST" && url.pathname === "/api/viral-breakdowns") { const { crawlTaskId, videoIds } = await readJson(request); if (typeof crawlTaskId !== "string" || !Array.isArray(videoIds) || !videoIds.length || videoIds.length > MAX_WORKS_PER_REPORT) return json(response, 400, { error: `请选择 1 至 ${MAX_WORKS_PER_REPORT} 条已转写作品后再拆解` }); return json(response, 202, submitViralBreakdown({ crawlTaskId, videoIds })); }
     if (request.method === "POST" && url.pathname === "/api/topic-batches") {

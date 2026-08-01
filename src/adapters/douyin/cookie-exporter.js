@@ -3,13 +3,15 @@ const path = require("path");
 const { chromium } = require("playwright");
 const {
   RUNTIME_DIR,
-  acquireProfileLock,
+  acquireProfileLockWithRetry,
   buildChromeLaunchArgs,
   ensureDir,
   findChromePath,
   resolveChromeProfile,
 } = require("../../config/runtime-config");
 const { resolveAccountRole } = require("../../config/account-profiles");
+
+let cookieExportQueue = Promise.resolve();
 
 function toNetscapeCookie(cookie) {
   const httpOnlyPrefix = cookie.httpOnly ? "#HttpOnly_" : "";
@@ -20,10 +22,10 @@ function toNetscapeCookie(cookie) {
   return [domain, includeSubdomains, cookie.path || "/", secure, expires, cookie.name, cookie.value].join("\t");
 }
 
-async function exportDouyinCookies(role = "content") {
+async function runCookieExport(role) {
   const account = resolveAccountRole(role);
   const profile = resolveChromeProfile(account.profilePath);
-  const lock = acquireProfileLock(profile.profilePath);
+  const lock = await acquireProfileLockWithRetry(profile.profilePath);
   let context;
   try {
     context = await chromium.launchPersistentContext(profile.userDataDir, {
@@ -47,6 +49,12 @@ async function exportDouyinCookies(role = "content") {
     if (context) await context.close().catch(() => {});
     lock.release();
   }
+}
+
+function exportDouyinCookies(role = "content") {
+  const operation = cookieExportQueue.catch(() => {}).then(() => runCookieExport(role));
+  cookieExportQueue = operation.catch(() => {});
+  return operation;
 }
 
 module.exports = { exportDouyinCookies };

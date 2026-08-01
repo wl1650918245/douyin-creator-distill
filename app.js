@@ -459,10 +459,10 @@ function renderSourceProgress(task) {
     const running = ["running", "queued", "pausing"].includes(task.status);
     const paused = task.status === "paused";
     const hasError = task.status === "partial" || task.status === "failed" || task.status === "interrupted_recoverable";
-    const count = `完成 ${completed} / ${total} 条${failed ? ` · 失败 ${failed}` : ""}${queued ? ` · 待处理 ${queued}` : ""}`;
+    const count = `总计 ${total} 条 · 已完成 ${completed}${failed ? ` · 剩余 ${failed}` : ""}${queued ? ` · 待处理 ${queued}` : ""}`;
     const nextStep = hasError
       ? failed
-        ? "成功结果已保留。下一步：到任务中心查看失败原因，并仅重试失败作品。"
+        ? `成功的 ${completed} 条已保留，不会重复处理。点击“继续剩余 ${failed} 条”即可从失败作品继续。`
         : "批处理准备失败。修复配置或运行环境后，到任务中心从断点继续。"
       : paused
         ? "批处理已安全暂停。下一步：到任务中心点击“从断点继续”。"
@@ -478,7 +478,7 @@ function renderSourceProgress(task) {
       : paused || (task.status === "failed" && queued)
         ? `<div class="source-progress-actions"><button class="progress-action primary" type="button" data-transcription-resume="${escapeHtml(task.id)}">从断点继续</button></div>`
         : failed
-          ? `<div class="source-progress-actions"><button class="progress-action primary" type="button" data-transcription-retry="${escapeHtml(task.id)}">重试失败 ${failed} 条</button></div>`
+          ? `<div class="source-progress-actions"><button class="progress-action primary" type="button" data-transcription-retry="${escapeHtml(task.id)}">继续剩余 ${failed} 条</button></div>`
           : "";
     updateSourceProgressMarkup(`<div class="source-progress-shell"><div class="progress-orbit" aria-hidden="true"><i></i><b>${hasError ? "!" : paused ? "停" : running ? "转" : "✓"}</b></div><div class="source-progress-body"><div class="source-progress-header"><span class="live-label"><i class="activity-dot"></i>${hasError ? "部分失败" : paused ? "已暂停" : running ? "正在转写" : escapeHtml(taskLabel(task.status))}</span><strong>文本提取</strong><code>${escapeHtml(taskDisplayName(task))}</code><small>${escapeHtml(count)}</small></div><p class="source-progress-detail">${escapeHtml(auditDetail(task))}</p><p class="source-progress-next">${escapeHtml(nextStep)}</p></div>${actions}</div>`);
     return;
@@ -981,8 +981,8 @@ function transcriptionTaskActions(task) {
   if (["queued", "running"].includes(task.status)) actions.push(`<button type="button" data-transcription-pause="${escapeHtml(task.id)}">暂停</button>`);
   if (task.status === "pausing") actions.push('<button type="button" disabled>当前作品结束后暂停</button>');
   if (task.status === "paused" || (task.status === "failed" && Number(summary.queued || 0) > 0)) actions.push(`<button type="button" data-transcription-resume="${escapeHtml(task.id)}">从断点继续</button>`);
-  if (Number(summary.failed || 0) > 0) actions.push(`<button type="button" data-transcription-retry="${escapeHtml(task.id)}">重试失败 ${formatNumber(summary.failed)} 条</button>`);
-  if (Number(summary.completed || 0) > 0 && ["waiting_for_user", "partial", "paused", "failed"].includes(task.status)) actions.push(`<button type="button" data-task-open-transcripts="${escapeHtml(task.id)}">打开转写文件夹</button>`);
+  if (Number(summary.failed || 0) > 0) actions.push(`<button type="button" class="primary" data-transcription-retry="${escapeHtml(task.id)}">继续剩余 ${formatNumber(summary.failed)} 条</button>`);
+  if (Number(summary.completed || 0) > 0 && ["waiting_for_user", "partial", "paused", "failed"].includes(task.status)) actions.push(`<button type="button" data-task-open-transcripts="${escapeHtml(task.id)}">打开全部转写位置</button>`);
   return actions.join("");
 }
 function mapWork(work) {
@@ -1065,6 +1065,7 @@ function sourceProgressTask(tasks) {
   if (currentTask) return currentTask;
   return tasks.find((task) => isDirectoryTask(task) && ["queued", "running"].includes(task.status))
     || tasks.find((task) => isGetNotesTask(task) && ["queued", "running", "pausing", "paused"].includes(task.status))
+    || tasks.find((task) => isGetNotesTask(task) && Number(task.summary?.failed || 0) > 0 && ["partial", "failed", "interrupted_recoverable"].includes(task.status))
     || tasks.find((task) => isDirectoryTask(task))
     || null;
 }
@@ -1197,7 +1198,7 @@ async function controlTranscriptionBatch(taskId, action) {
   const messages = {
     pause: ["正在安全暂停，当前作品完成后停止取下一条。", "review"],
     resume: ["已从 SQLite 断点继续批处理。", "success"],
-    "retry-failed": ["失败作品已重新加入队列，成功作品不会重复处理。", "success"],
+    "retry-failed": ["剩余作品已重新加入队列，已成功作品不会重复处理。", "success"],
   };
   try {
     const response = await fetch(`/api/transcription-batches/${encodeURIComponent(taskId)}/${action}`, { method: "POST" });
@@ -1277,7 +1278,7 @@ document.querySelector(".active-task-list").addEventListener("click", async (eve
   if (transcriptsButton) {
     try {
       const response = await fetch(`/api/tasks/${encodeURIComponent(transcriptsButton.dataset.taskOpenTranscripts)}/open-transcript-folder`, { method: "POST" }); const payload = await response.json();
-      showToast(response.ok ? "已打开转写文件所在文件夹。" : payload.error || "无法打开转写文件夹。", response.ok ? "success" : "review");
+      showToast(response.ok ? `已打开 ${payload.folders?.length || 1} 个转写位置。` : payload.error || "无法打开转写文件夹。", response.ok ? "success" : "review");
     } catch (error) { showToast(`无法打开转写文件夹：${scrubProviderName(error.message)}`, "review"); }
   }
 });
@@ -1477,7 +1478,7 @@ document.querySelector("#archive-view").addEventListener("click", async (event) 
   if (transcriptButton) {
     try {
       const response = await fetch(`/api/tasks/${encodeURIComponent(transcriptButton.dataset.creatorTranscriptFolder)}/open-transcript-folder`, { method: "POST" }); const payload = await response.json();
-      showToast(response.ok ? "已打开该作品的转写文件夹。" : payload.error || "无法打开转写文件夹。", response.ok ? "success" : "review");
+      showToast(response.ok ? `已打开 ${payload.folders?.length || 1} 个转写位置。` : payload.error || "无法打开转写文件夹。", response.ok ? "success" : "review");
     } catch (error) { showToast(`无法打开转写文件夹：${scrubProviderName(error.message)}`, "review"); }
   }
   if (event.target.closest("[data-return-workbench]")) setActiveView("workbench");
