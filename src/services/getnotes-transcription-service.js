@@ -6,6 +6,7 @@ const { getAccountGetNotesDir, ensureDir, sanitizeAccountSlug } = require("../co
 const { appendLog, createTask, createTranscriptJob, getTask, listTranscriptJobs, updateTranscriptJob } = require("./task-store");
 const { createTranscriptionBatchOrchestrator } = require("./transcription-batch-orchestrator");
 const { buildWorkAssetStem } = require("./transcript-naming");
+const { filterProcessableWorks } = require("./work-ledger-store");
 
 const TEXT_EXTRACTION_CONFIG_PATH = path.resolve(__dirname, "../../config/text-extraction.config.json");
 
@@ -141,9 +142,10 @@ const orchestrator = createTranscriptionBatchOrchestrator({
 
 function submit(crawlTaskId, videoIds) {
   const crawlTask = getTask(crawlTaskId); if (!crawlTask?.output_path || !fs.existsSync(crawlTask.output_path)) throw new Error("未找到已审核的 JSON，不能创建转写任务。");
-  const data = JSON.parse(fs.readFileSync(crawlTask.output_path, "utf8")); const selected = new Set(videoIds.map(String)); const works = (data.works || []).filter((work) => selected.has(String(work.videoId)) && /^https?:\/\//.test(work.videoUrl || ""));
-  if (!works.length) throw new Error("未选择有效的真实作品链接。");
-  const taskId = crypto.randomUUID(); createTask(taskId, `Get笔记转写 / ${crawlTask.source}`, { sourceMode: crawlTask.source_mode || "profile", accountRole: crawlTask.account_role || "content", profileId: crawlTask.profile_id || null }); updateTask(taskId, { status: "queued", phase: "等待 Get笔记执行位", creator_name: crawlTask.creator_name || works.find((work) => work.authorNickname)?.authorNickname || "", summary_json: JSON.stringify({ totalCount: works.length, provider: "getnotes" }) });
+  const data = JSON.parse(fs.readFileSync(crawlTask.output_path, "utf8")); const selected = new Set(videoIds.map(String)); const requestedWorks = (data.works || []).filter((work) => selected.has(String(work.videoId)) && /^https?:\/\//.test(work.videoUrl || ""));
+  const plan = filterProcessableWorks(crawlTaskId, requestedWorks); const works = plan.works;
+  if (!works.length) throw new Error("所选作品均已完成或正在处理中，没有需要重复创建的转写任务。");
+  const taskId = crypto.randomUUID(); createTask(taskId, `Get笔记转写 / ${crawlTask.source}`, { sourceMode: crawlTask.source_mode || "profile", accountRole: crawlTask.account_role || "content", profileId: crawlTask.profile_id || null }); updateTask(taskId, { status: "queued", phase: "等待 Get笔记执行位", creator_name: crawlTask.creator_name || works.find((work) => work.authorNickname)?.authorNickname || "", summary_json: JSON.stringify({ totalCount: works.length, requestedCount: requestedWorks.length, skippedCompleted: plan.skippedCompleted.length, skippedActive: plan.skippedActive.length, provider: "getnotes" }) });
   works.forEach((work) => createTranscriptJob({ id: crypto.randomUUID(), taskId, crawlTaskId, videoId: String(work.videoId), videoUrl: work.videoUrl, title: work.title || `未命名${work.hasImages || work.contentType === "image" ? "图文" : "视频"} · ${work.videoId}`, provider: "getnotes" }));
   orchestrator.enqueue(taskId, crawlTaskId); return taskId;
 }

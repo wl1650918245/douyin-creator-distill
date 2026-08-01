@@ -21,6 +21,7 @@ const {
 } = require("./task-store");
 const { createTranscriptionBatchOrchestrator } = require("./transcription-batch-orchestrator");
 const { buildWorkAssetStem } = require("./transcript-naming");
+const { filterProcessableWorks } = require("./work-ledger-store");
 
 const PROJECT_ROOT = path.resolve(__dirname, "../..");
 const PYTHON_PATH = path.join(PROJECT_ROOT, "runtime", "python", ".venv", "Scripts", "python.exe");
@@ -248,8 +249,10 @@ function submit(crawlTaskId, videoIds) {
   const crawlTask = getTask(crawlTaskId);
   if (!crawlTask?.output_path || !fs.existsSync(crawlTask.output_path)) throw new Error("未找到已审核的 JSON，不能创建本地 Whisper 任务。");
   const selected = new Set(videoIds.map(String));
-  const works = readCrawlWorks(crawlTask).filter((work) => selected.has(String(work.videoId)));
-  if (!works.length) throw new Error("没有选择有效作品。");
+  const requestedWorks = readCrawlWorks(crawlTask).filter((work) => selected.has(String(work.videoId)));
+  const plan = filterProcessableWorks(crawlTaskId, requestedWorks);
+  const works = plan.works;
+  if (!works.length) throw new Error("所选作品均已完成或正在处理中，没有需要重复创建的转写任务。");
   if (works.some((work) => work.hasImages || work.contentType === "image")) throw new Error("本地 Whisper 只处理视频；图文作品请改用云端链接提取。");
 
   const taskId = crypto.randomUUID();
@@ -262,7 +265,7 @@ function submit(crawlTaskId, videoIds) {
     status: "queued",
     phase: "等待本地 Whisper 执行位",
     creator_name: crawlTask.creator_name || works.find((work) => work.authorNickname)?.authorNickname || "",
-    summary_json: JSON.stringify({ totalCount: works.length, provider: "whisper" }),
+    summary_json: JSON.stringify({ totalCount: works.length, requestedCount: requestedWorks.length, skippedCompleted: plan.skippedCompleted.length, skippedActive: plan.skippedActive.length, provider: "whisper" }),
   });
   for (const work of works) {
     createTranscriptJob({

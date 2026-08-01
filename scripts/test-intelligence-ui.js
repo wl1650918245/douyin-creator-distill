@@ -26,9 +26,11 @@ const screenshotDir = path.resolve(__dirname, "../runtime");
     await page.locator('.nav-item[data-view="agent"]').click();
     await page.locator("#agent-view").waitFor({ state: "visible" });
     await page.waitForFunction(() => Number(document.querySelector("#agent-creator-count")?.textContent || 0) > 0);
-    assert.equal(await page.locator("#agent-creator-count").innerText(), "3");
-    assert.equal(await page.locator(".agent-creator-item").count(), 3);
-    assert.match(await page.locator("#agent-readiness-card").innerText(), /飞天闪客/);
+    const creatorCount = await page.locator(".agent-creator-item").count();
+    assert.ok(creatorCount > 0, "至少应展示一个达到材料门槛的真实博主");
+    assert.equal(Number(await page.locator("#agent-creator-count").innerText()), creatorCount);
+    const selectedCreator = await page.locator(".agent-creator-item strong").first().innerText();
+    assert.match(await page.locator("#agent-readiness-card").innerText(), new RegExp(selectedCreator));
     assert.equal(await page.locator("#generate-creator-agent").isEnabled(), true);
     await page.screenshot({ path: path.join(screenshotDir, "creator-agent-demo.png"), fullPage: true });
 

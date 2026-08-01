@@ -22,6 +22,7 @@ const {
 } = require("./task-store");
 const { auditJson } = require("./json-audit");
 const { LOOP_STEPS, classifyCrawlFailure, mergeCrawlArtifacts } = require("./crawl-loop-policy");
+const { ingestCrawlArtifact, saveTaskCheckpoint } = require("./work-ledger-store");
 const { resolveAccountRole } = require("../config/account-profiles");
 
 let active = false;
@@ -89,7 +90,10 @@ function saveLoopState(taskId, patch) {
   const task = getTask(taskId);
   const options = { ...(task?.options || {}) };
   options.loop = { ...(options.loop || {}), ...patch };
-  return updateTask(taskId, { options_json: JSON.stringify(options) });
+  const updated = updateTask(taskId, { options_json: JSON.stringify(options) });
+  try { saveTaskCheckpoint(taskId, "crawl-loop", options.loop.state || "unknown", options.loop.currentAttempt || null, options.loop); }
+  catch (error) { console.error(`抓取检查点写入失败，任务 Loop 状态仍已保存：${error.message}`); }
+  return updated;
 }
 
 function loopStepsFor(job) {
@@ -186,7 +190,10 @@ function persistAudit(taskId, source, outputPath, recordRun = false) {
       ? `${audit.summary.totalCount} 条唯一作品${warningFields.length ? `，${warningFields.join("、")}，不阻断后续处理` : "，必填字段检查完成"}`
       : `主页计数 ${audit.summary.pageTotal || "未知"}，抓到 ${audit.summary.totalCount}；${missingFields.join("、") || "字段需复核"}`,
   });
-  if (recordRun) addRun({ id: crypto.randomUUID(), taskId, source, outputPath, auditStatus: audit.status, totalCount: audit.summary.totalCount });
+  const runId = recordRun ? crypto.randomUUID() : null;
+  if (recordRun) addRun({ id: runId, taskId, source, outputPath, auditStatus: audit.status, totalCount: audit.summary.totalCount });
+  try { ingestCrawlArtifact({ taskId, runId, outputPath, auditStatus: audit.status }); }
+  catch (error) { appendLog(taskId, `作品总账暂未更新，原始 JSON 已保留并将在服务重启时回填：${error.message}`); }
   if (status === "waiting_for_user") {
     if (task?.options?.subscriptionId) completeSubscriptionCheck(task.options.subscriptionId, outputPath);
     else upsertSubscriptionFromTask(taskId);

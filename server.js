@@ -35,10 +35,11 @@ const { MAX_WORKS_PER_REPORT, submitViralBreakdown } = require("./src/services/v
 const { creatorTranscriptGroups, readArtifact, submitAgentReview, submitCreatorAgent, submitTopicBatch } = require("./src/services/content-intelligence-service");
 const { getSettings: getTranscriptionSettings, saveSettings: saveTranscriptionSettings } = require("./src/services/transcription-settings-service");
 const { getAccountProfiles, launchAccountLogin, updateAccountProfiles } = require("./src/services/account-profile-service");
+const { listWorkLedgerSummaries } = require("./src/services/work-ledger-store");
 
 const root = __dirname; const host = "127.0.0.1"; const port = Number(process.env.PORT || 8780);
-const API_VERSION = "2026-07-29.2";
-const API_CAPABILITIES = ["account-profiles", "directory-crawl", "directory-crawl-loop", "favorites-directory", "favorites-directory-cache", "subscriptions", "scheduled-incremental-checks", "text-extraction", "local-whisper", "transcription-priority-fallback", "transcription-batch-pause-resume", "transcription-batch-retry", "transcription-checkpoint-recovery", "viral-breakdown", "viral-report-history", "topic-advisor", "creator-agent", "creator-draft-review", "creator-transcript-assets"];
+const API_VERSION = "2026-08-01.1";
+const API_CAPABILITIES = ["account-profiles", "directory-crawl", "directory-crawl-loop", "favorites-directory", "favorites-directory-cache", "subscriptions", "scheduled-incremental-checks", "work-ledger", "text-extraction", "local-whisper", "transcription-priority-fallback", "transcription-batch-pause-resume", "transcription-batch-retry", "transcription-checkpoint-recovery", "viral-breakdown", "viral-report-history", "topic-advisor", "creator-agent", "creator-draft-review", "creator-transcript-assets"];
 const types = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -142,6 +143,7 @@ http.createServer(async (request, response) => {
       return review ? json(response, 200, readArtifact(review)) : json(response, 404, { error: "稿件审阅记录不存在" });
     }
     if (request.method === "GET" && url.pathname === "/api/transcript-jobs") return json(response, 200, { jobs: listTranscriptJobs(url.searchParams.get("crawlTaskId") || "", { all: url.searchParams.get("all") === "1" }) });
+    if (request.method === "GET" && url.pathname === "/api/work-ledger-summaries") return json(response, 200, { sources: listWorkLedgerSummaries() });
     if (request.method === "GET" && url.pathname === "/api/transcription-settings") return json(response, 200, getTranscriptionSettings());
     if (request.method === "GET" && url.pathname === "/api/account-profiles") return json(response, 200, getAccountProfiles());
     if (request.method === "GET" && url.pathname === "/api/favorites-directory-cache") {

@@ -34,6 +34,12 @@ try { db.exec("ALTER TABLE subscriptions ADD COLUMN deleted_at TEXT"); } catch (
 db.prepare(`UPDATE transcript_jobs SET provider_started_at=created_at
   WHERE provider='getnotes' AND provider_started_at IS NULL
     AND (COALESCE(provider_task_id,'') != '' OR COALESCE(note_id,'') != '')`).run();
+const workLedger = require("./work-ledger-store");
+
+function syncWorkLedger(jobId) {
+  try { workLedger.syncTranscriptState(jobId); }
+  catch (error) { console.error(`作品总账同步失败，将在服务重启时回填：${error.message}`); }
+}
 
 function repairWhisperProgressEncoding() {
   const labels = {
@@ -137,8 +143,8 @@ function getTaskAttempt(id) { return hydrateTaskAttempt(db.prepare("SELECT * FRO
 function listTaskAttempts(taskId) { return db.prepare("SELECT * FROM task_attempts WHERE task_id=? ORDER BY attempt_no, started_at").all(taskId).map(hydrateTaskAttempt); }
 function addRun(run) { db.prepare("INSERT INTO crawl_runs (id,task_id,source,output_path,audit_status,total_count,created_at) VALUES (?,?,?,?,?,?,?)").run(run.id, run.taskId, run.source, run.outputPath, run.auditStatus, run.totalCount, now()); }
 function listRuns() { return db.prepare("SELECT * FROM crawl_runs ORDER BY created_at DESC LIMIT 100").all(); }
-function createTranscriptJob(job) { const time = now(); db.prepare("INSERT INTO transcript_jobs (id,task_id,crawl_task_id,video_id,video_url,title,provider,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)").run(job.id, job.taskId, job.crawlTaskId, job.videoId, job.videoUrl, job.title, job.provider, "queued", time, time); return getTranscriptJob(job.id); }
-function updateTranscriptJob(id, fields) { const entries = Object.entries({ ...fields, updated_at: now() }); const sets = entries.map(([key]) => `${key}=?`).join(", "); db.prepare(`UPDATE transcript_jobs SET ${sets} WHERE id=?`).run(...entries.map(([, value]) => value), id); return getTranscriptJob(id); }
+function createTranscriptJob(job) { const time = now(); db.prepare("INSERT INTO transcript_jobs (id,task_id,crawl_task_id,video_id,video_url,title,provider,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)").run(job.id, job.taskId, job.crawlTaskId, job.videoId, job.videoUrl, job.title, job.provider, "queued", time, time); syncWorkLedger(job.id); return getTranscriptJob(job.id); }
+function updateTranscriptJob(id, fields) { const entries = Object.entries({ ...fields, updated_at: now() }); const sets = entries.map(([key]) => `${key}=?`).join(", "); db.prepare(`UPDATE transcript_jobs SET ${sets} WHERE id=?`).run(...entries.map(([, value]) => value), id); syncWorkLedger(id); return getTranscriptJob(id); }
 function getTranscriptJob(id) { return db.prepare("SELECT * FROM transcript_jobs WHERE id=?").get(id) || null; }
 function listTranscriptJobs(crawlTaskId, options = {}) {
   if (crawlTaskId) return db.prepare("SELECT * FROM transcript_jobs WHERE crawl_task_id=? ORDER BY created_at DESC").all(crawlTaskId);
@@ -342,6 +348,8 @@ function backfillFavoritesDirectoryCache() {
 
 backfillFavoritesDirectoryCache();
 backfillSubscriptions();
+try { workLedger.backfillStateLedger(); }
+catch (error) { console.error(`作品总账历史回填失败，主任务数据保持可用：${error.message}`); }
 
 function closeTaskStore() {
   db.close();

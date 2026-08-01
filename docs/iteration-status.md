@@ -1,6 +1,6 @@
 # CreatorDistill 迭代状态
 
-Last reviewed: 2026-07-28
+Last reviewed: 2026-08-01
 
 ## Purpose And Update Rule
 
@@ -30,6 +30,7 @@ JSON is the first evidence layer. The product must not automatically call Get No
 | Local web service | Implemented and verified locally | Runs at `http://127.0.0.1:8780/`. |
 | Asset root | Implemented and verified locally | Default: `%USERPROFILE%\Documents\DouyinKnowledgeAssets`. |
 | Runtime SQLite | Implemented and verified locally | `.runtime\agent-state.sqlite` stores workflow state, not the source evidence. |
+| 作品状态总账 | 已实现并完成本地真实库验收 | `works` 按来源和作品 ID 唯一；`work_processing_state` 聚合跨批状态；`task_checkpoints` 保存恢复点。隔离回归覆盖重复导入、成功吸收态、失败带入和活动任务去重；真实库回填 1,208 条逻辑作品，唯一键计数同为 1,208。 |
 | Source evidence | Implemented and verified locally | Raw exports live in `raw\douyin-analysis\<account>\*.json`. |
 | Cold start | Verified locally | SQLite task, crawl-run, and transcript-job rows were cleared on 2026-07-14. Raw JSON was retained but is not displayed. |
 
@@ -200,5 +201,7 @@ User selects audited works
 | 2026-07-28 | 增加目标驱动目录抓取 Loop。 | 已实现 Chrome 首轮、Chrome 恢复抓取、内部接口补充、按 `videoId` 合并、错误分类、SQLite 尝试记录和重启续跑；`npm run test:loop` 与既有回归全部通过。真实任务 `94bf888b-e094-4e37-8793-c3538ebf15d4` 首轮 Chrome 成功，未触发恢复轮。 |
 | 2026-07-29 | 修复关注博主增量抓取无法利用审核基线的问题。 | `jianghushuo` 当次 Chrome 两轮与接口补充仅合并到 591/639；新规则合并昨日审核通过的 637 条基线和今日 2 条新增，并隔离 15 条无作者、无发布日期、仅来自 DOM 的噪声卡片。真实任务 `bcdf58de-e4ea-4da3-ad0c-f6196f88eb13` 重建后为 639/639、日期缺失 0、增量结果新增 2/移除 0，JSON 审核通过；语法、单元和 UI 测试通过。 |
 | 2026-07-29 | 将关注博主自动更新改为追加式增量。 | 自动任务加载最近一次审核通过的作品 ID 基线，至少滚动 3 轮，在命中最多 12 条历史作品且连续 2 轮没有新增后停止；只追加可证明属于目标博主的新作品，不周期性删除历史资产。首次抓取和人工重新抓取仍使用严格数量对账的全量快照。增量边界、基线加载、追加合并和双模式审核已通过 `npm run test:loop`、完整单元与 UI 回归；本次没有新增线上账号实抓证据。 |
+| 2026-08-01 | 建立统一作品状态总账和任务检查点。 | 新增 `works`、`crawl_run_works`、`work_processing_state`、`artifacts`、`task_checkpoints`；真实库幂等回填 1,208 条逻辑作品，无重复键。江湖说 639 条转写批次先安全暂停于 343 条，服务重启后保持 343 条并从检查点恢复运行；关注页展示 641 条目录及唯一转写统计。完整单元和 UI 回归通过。 |
+| 2026-08-01 | 修复博主智能体材料只读取最近 500 条的问题。 | 完整索引识别出 3 个有材料的博主；页面统计与候选列表一致，真实 UI 回归通过。 |
 | 2026-07-28 | 收口博主智能体与选题顾问交互。 | 已有智能体显示“查看并使用”，后端避免重复生成；选题报告按博主分组，默认禁止跨博主混用，只有显式对比模式可放行。 |
 | 2026-07-28 | 修复主页混入异作者作品仍被判定通过的问题。 | `feitianshanke` 首轮捕获 82 条，其中作品 `7584734189266717979` 作者为“三联书店三联书情”；新门禁按主页 `sec_user_id` 排除并保留排除证据，纠正版为 81/81 个唯一作品，SHA-256 为 `667EE4C61158373CE95F133CCB5E356AA2BF75568A964A353A459A2EC1B01F5B`。 |

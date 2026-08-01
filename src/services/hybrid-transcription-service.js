@@ -14,6 +14,7 @@ const {
 } = require("./task-store");
 const { createTranscriptionBatchOrchestrator } = require("./transcription-batch-orchestrator");
 const { executePreferredTranscription, isImageWork } = require("./transcription-routing-policy");
+const { filterProcessableWorks } = require("./work-ledger-store");
 
 const PREFERENCES = ["cloud-first", "whisper-first"];
 
@@ -100,8 +101,10 @@ function submit(crawlTaskId, videoIds, preference) {
   if (!crawlTask?.output_path || !fs.existsSync(crawlTask.output_path)) throw new Error("未找到已审核的 JSON，不能创建转写任务。");
   const context = cloudTranscription.prepareBatch({ crawlTaskId });
   const selected = new Set(videoIds.map(String));
-  const works = context.works.filter((work) => selected.has(String(work.videoId)) && /^https?:\/\//.test(work.videoUrl || ""));
-  if (!works.length) throw new Error("没有选择有效作品。");
+  const requestedWorks = context.works.filter((work) => selected.has(String(work.videoId)) && /^https?:\/\//.test(work.videoUrl || ""));
+  const plan = filterProcessableWorks(crawlTaskId, requestedWorks);
+  const works = plan.works;
+  if (!works.length) throw new Error("所选作品均已完成或正在处理中，没有需要重复创建的转写任务。");
 
   const taskId = crypto.randomUUID();
   const label = preference === "cloud-first" ? "云端优先转写" : "Whisper优先转写";
@@ -116,6 +119,9 @@ function submit(crawlTaskId, videoIds, preference) {
     creator_name: crawlTask.creator_name || works.find((work) => work.authorNickname)?.authorNickname || "",
     summary_json: JSON.stringify({
       totalCount: works.length,
+      requestedCount: requestedWorks.length,
+      skippedCompleted: plan.skippedCompleted.length,
+      skippedActive: plan.skippedActive.length,
       provider: preference,
       preferredProvider: preference === "cloud-first" ? "getnotes" : "whisper",
     }),

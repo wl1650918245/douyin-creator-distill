@@ -1,42 +1,44 @@
-# Task, Archive, and Follow Contract
+# 任务、归档与关注契约
 
-## 1. Separate Objects
+## 1. 对象边界
 
-| Object | Responsibility |
+| 对象 | 责任 |
 | --- | --- |
-| Creator profile | Stable identity, display metadata, and asset workspace reference |
-| Task | One requested execution and its live state |
-| Crawl run | One completed or failed evidence-producing attempt |
-| Work index | Seen work IDs used for incremental comparison |
-| Follow rule | Whether a creator may be checked again and how |
-| Downstream task | Transcription, comment collection, breakdown, distillation, or indexing status |
+| 内容来源 | 稳定身份、展示信息和资产工作区引用 |
+| 任务 | 一次用户或调度器提出的执行目标及批次状态 |
+| 抓取尝试 | 一种 Chrome 或接口策略的一次执行及错误分类 |
+| 抓取版本 | 一份 JSON 证据及审核结论 |
+| 作品总账 | 按 `source_key + video_id` 保存唯一逻辑作品 |
+| 关注规则 | 是否定期检查来源、检查频率和审核基线 |
+| 下游状态 | 转写、拆解、蒸馏或索引的单作品当前状态 |
 
-## 2. Task State
+## 2. 任务状态
 
 ```text
 draft -> queued -> running -> waiting_for_audit -> waiting_for_user -> completed
 ```
 
-Any task may also become `partial`, `failed`, `cancelled`, or `interrupted_recoverable`.
+任务也可以进入 `partial`、`failed`、`cancelled` 或 `interrupted_recoverable`。
 
-Task Center only prioritizes queued, running, waiting-for-user, and exception states. A task row shows: type, object, input range, phase/counts, output or error, latest event time, queue position when relevant, and allowed actions.
+任务中心优先显示排队中、执行中、等待用户和异常任务。每一行至少展示任务类型、对象、输入范围、阶段与数量、产物或错误、最近更新时间、必要时的队列位置及允许操作。
 
-## 3. Crawl Archive
+## 3. 抓取归档
 
-Every crawl run retains: run ID, creator ID, source type, start and finish times, status, JSON path, audit result, total/new/duplicate/failed counts, and a sanitized error reason when applicable.
+每个抓取版本保留版本 ID、来源 ID、来源类型、开始与结束时间、状态、JSON 路径、审核结论、总数/新增/重复/失败数量，以及脱敏后的错误原因。
 
-Archive is not a generic event log. It is the durable record of completed crawl attempts and their JSON evidence. It supports filtering by creator, time, source mode, and audit status.
+归档不是普通事件日志，而是抓取证据的持久索引。它支持按来源、时间、来源模式和审核状态筛选；原始 JSON 本身仍是第一证据层。
 
-## 4. Follow and Incremental Rules
+## 4. 关注与增量规则
 
-1. A follow rule can exist only after one successful creator-post crawl creates a baseline.
-2. Each new check first obtains a current directory, then compares `creatorId + videoId` against the work index.
-3. New works create a separate incremental JSON and crawl run; old runs are never overwritten.
-4. A failed run, failed audit, or unexplained count anomaly does not update the index, last successful run, or baseline.
-5. Discovery of new works creates a waiting-for-user directory only. It does not automatically start text enrichment or analysis.
-6. Favorites collections are manual re-crawl and comparison in the first version; they do not create automatic incremental follow rules.
+1. 公开博主至少完成一次审核通过的目录抓取后，才能建立自动检查基线。
+2. 每次检查先生成当前证据，再按 `source_key + video_id` 与作品总账比较。
+3. 新作品写入新的 JSON 版本和抓取版本；旧版本不覆盖。
+4. 抓取失败、审核失败或无法解释的数量异常不更新作品总账、最近成功版本或订阅基线。
+5. 发现新作品只生成待用户选择的目录，不自动开始转写或分析。
+6. 公开博主和“我的收藏夹”分别作为关注来源管理；收藏夹仍按所选文件夹范围抓取并跨文件夹去重。
+7. 抓取恢复重新扫描近期范围并按 ID 合并，不承诺恢复平台页面游标；转写恢复按单作品状态精确续跑。
 
-## 5. Storage Paths
+## 5. 存储路径
 
 The selected knowledge-asset root contains:
 
@@ -48,4 +50,4 @@ topic-library/
 agents/
 ```
 
-Changing an asset root or moving existing files requires explicit user confirmation and a migration plan.
+修改资产根目录或移动已有文件属于重大变更，必须先确认并提供迁移方案。

@@ -9,6 +9,7 @@ const {
   updateTaskProgress,
   updateTranscriptJob,
 } = require("./task-store");
+const { saveTaskCheckpoint } = require("./work-ledger-store");
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -65,7 +66,7 @@ function createTranscriptionBatchOrchestrator(options) {
 
   function syncSummary(taskId, fields = {}) {
     const jobs = listTranscriptJobsForTask(taskId);
-    const summary = summarize(jobs, provider);
+    const summary = { ...(getTask(taskId)?.summary || {}), ...summarize(jobs, provider) };
     const { stage, currentVideoId, ...taskFields } = fields;
     updateTaskProgress(taskId, {
       stage: stage || "batch",
@@ -77,10 +78,13 @@ function createTranscriptionBatchOrchestrator(options) {
       queued: summary.queued,
       currentVideoId: currentVideoId || "",
     });
-    return updateTask(taskId, {
+    const updated = updateTask(taskId, {
       ...taskFields,
       summary_json: JSON.stringify(summary),
     });
+    try { saveTaskCheckpoint(taskId, "transcription-batch", taskFields.status || updated.status, currentVideoId || null, summary); }
+    catch (error) { console.error(`转写检查点写入失败，单作品状态仍已保存：${error.message}`); }
+    return updated;
   }
 
   function enqueue(taskId, crawlTaskId) {

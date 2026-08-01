@@ -74,6 +74,15 @@ const baseUrl = process.env.TEST_BASE_URL || "http://127.0.0.1:8780";
     assert.equal(archiveSummary.completedTranscripts, 2, "关注页应按作品 ID 去重统计已完成转写");
     assert.equal(archiveSummary.pendingTranscription.id, "batch-1", "关注页应定位该博主最近的未完成批次");
     assert.equal(archiveSummary.runCount, 1, "目录版本数量应来自抓取记录");
+    const ledgerArchiveSummary = await page.evaluate(() => creatorArchiveEntries([
+      { id: "crawl-ledger", source: "jianghushuo", status: "waiting_for_user", output_path: "C:\\assets\\jianghushuo.json", updated_at: "2026-08-01T12:00:00Z", summary: { totalCount: 639 } },
+    ], [], [], [
+      { id: "subscription-ledger", source_key: "creator:jianghushuo", source_type: "creator", source: "jianghushuo", updated_at: "2026-08-01T12:00:00Z" },
+    ], [
+      { sourceKey: "creator:jianghushuo", total: 641, transcriptionCompleted: 336 },
+    ])[0]);
+    assert.equal(ledgerArchiveSummary.completedTranscripts, 336, "关注页应优先读取作品总账的全局转写数量");
+    assert.equal(ledgerArchiveSummary.ledgerSummary.total, 641, "关注页应保留作品总账的唯一作品数量");
     assert.deepEqual(pageErrors, []);
     console.log("transcription priority ui ok");
   } finally {

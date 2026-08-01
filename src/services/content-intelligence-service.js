@@ -19,7 +19,6 @@ const {
   getTopicBatch,
   getViralReport,
   listCreatorAgents,
-  listTasks,
   listTranscriptJobs,
   listViralReports,
   updateAgentReview,
@@ -172,10 +171,13 @@ async function generateTopicBatch(item) {
 }
 
 function creatorTranscriptGroups() {
-  const tasksById = new Map(listTasks().map((task) => [task.id, task]));
+  const completedJobs = listTranscriptJobs("", { all: true })
+    .filter((item) => item.status === "completed" && item.output_path && fs.existsSync(item.output_path));
+  const tasksById = new Map([...new Set(completedJobs.map((job) => job.crawl_task_id))]
+    .map((taskId) => [taskId, getTask(taskId)]));
   const groups = new Map();
   const chosen = new Map();
-  for (const job of listTranscriptJobs().filter((item) => item.status === "completed" && item.output_path && fs.existsSync(item.output_path))) {
+  for (const job of completedJobs) {
     const task = tasksById.get(job.crawl_task_id);
     if (!task?.source || task.source_mode === "favorites") continue;
     const key = `${String(task.source).toLowerCase()}:${job.video_id}`;

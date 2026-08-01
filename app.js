@@ -1073,9 +1073,10 @@ function taskSourceKey(task) {
   if (task?.source_mode === "favorites") return `favorites:${task.profile_id || "favorites-default"}`;
   return `creator:${String(task?.source || "").trim().toLowerCase()}`;
 }
-function creatorArchiveEntries(tasks, runs, transcriptJobs, subscriptions) {
+function creatorArchiveEntries(tasks, runs, transcriptJobs, subscriptions, ledgerSummaries = []) {
   const directoryTasks = tasks.filter((task) => isDirectoryTask(task) && !isFavoritesDiscoveryTask(task) && task.output_path && ["waiting_for_user", "partial"].includes(task.status));
   const tasksById = new Map(tasks.map((task) => [task.id, task]));
+  const ledgerBySource = new Map(ledgerSummaries.map((summary) => [summary.sourceKey, summary]));
   const latestByKey = new Map();
   directoryTasks.forEach((task) => {
     const key = taskSourceKey(task); const current = latestByKey.get(key);
@@ -1090,6 +1091,7 @@ function creatorArchiveEntries(tasks, runs, transcriptJobs, subscriptions) {
       if (!transcriptsByVideo.has(String(job.video_id))) transcriptsByVideo.set(String(job.video_id), job);
     });
     const transcripts = [...transcriptsByVideo.values()].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+    const ledgerSummary = ledgerBySource.get(subscription.source_key) || null;
     const relatedBatchIds = new Set(relatedJobs.map((job) => job.task_id));
     const pendingTranscription = tasks
       .filter((task) => relatedBatchIds.has(task.id) && isGetNotesTask(task) && (["queued", "running", "pausing", "paused"].includes(task.status) || (Number(task.summary?.failed || 0) > 0 && ["partial", "failed", "interrupted_recoverable"].includes(task.status))))
@@ -1100,7 +1102,7 @@ function creatorArchiveEntries(tasks, runs, transcriptJobs, subscriptions) {
         const remainingB = Math.max(0, Number(b.summary?.totalCount || b.summary?.total || 0) - Number(b.summary?.completed || 0));
         return remainingB - remainingA || new Date(b.updated_at) - new Date(a.updated_at);
       })[0] || null;
-    return { source: subscription.source_key, subscription, latest, runCount: relatedRuns.length, completedTranscripts: transcripts.length, relatedRuns, transcripts, pendingTranscription };
+    return { source: subscription.source_key, subscription, latest, runCount: relatedRuns.length, completedTranscripts: ledgerSummary?.transcriptionCompleted ?? transcripts.length, relatedRuns, transcripts, pendingTranscription, ledgerSummary };
   }).sort((a, b) => Number(a.subscription.source_type === "favorites") - Number(b.subscription.source_type === "favorites") || new Date(b.subscription.updated_at) - new Date(a.subscription.updated_at));
 }
 function renderCreatorArchive(creators, force = false) {
@@ -1143,9 +1145,9 @@ function taskAccountContext(task) {
 }
 async function refreshRuntimeViews() {
   try {
-    const [tasksResponse, runsResponse, transcriptsResponse, subscriptionsResponse] = await Promise.all([fetch("/api/tasks"), fetch("/api/runs"), fetch("/api/transcript-jobs?all=1"), fetch("/api/subscriptions")]);
+    const [tasksResponse, runsResponse, transcriptsResponse, subscriptionsResponse, ledgerResponse] = await Promise.all([fetch("/api/tasks"), fetch("/api/runs"), fetch("/api/transcript-jobs?all=1"), fetch("/api/subscriptions"), fetch("/api/work-ledger-summaries")]);
     if (!tasksResponse.ok || !runsResponse.ok || !transcriptsResponse.ok || !subscriptionsResponse.ok) return;
-    const { tasks } = await tasksResponse.json(); const { runs } = await runsResponse.json(); const { jobs: transcriptJobs } = await transcriptsResponse.json(); const { subscriptions } = await subscriptionsResponse.json(); latestTasksById = new Map(tasks.map((task) => [task.id, task]));
+    const { tasks } = await tasksResponse.json(); const { runs } = await runsResponse.json(); const { jobs: transcriptJobs } = await transcriptsResponse.json(); const { subscriptions } = await subscriptionsResponse.json(); const { sources: ledgerSummaries = [] } = ledgerResponse.ok ? await ledgerResponse.json() : {}; latestTasksById = new Map(tasks.map((task) => [task.id, task]));
     if (!hasHydratedWorks) {
       const latestReadyTask = tasks.find((task) => isDirectoryTask(task) && !isFavoritesDiscoveryTask(task) && ["waiting_for_user", "partial"].includes(task.status) && task.output_path);
       if (latestReadyTask) loadWorksFromTask(latestReadyTask.id, latestReadyTask.source, latestReadyTask.status);
@@ -1195,7 +1197,7 @@ async function refreshRuntimeViews() {
       taskCard.innerHTML = `<div class="card-heading"><div><span class="section-label"><i></i>真实任务</span><h2>任务执行与结果</h2></div><small>当前展示：${escapeHtml(filterLabel)} · ${escapeHtml(typeLabel)}</small></div>${taskRows}<p id="task-center-note" class="task-center-note">上方状态和任务类型均可筛选；数据每 2 秒同步一次。</p>`;
       lastTaskRenderSignature = taskRenderSignature;
     }
-    const creators = creatorArchiveEntries(tasks, runs, transcriptJobs, subscriptions); const archivedWorkCount = creators.reduce((total, entry) => total + Number(entry.latest?.summary?.totalCount || 0), 0); const archivedTranscriptCount = creators.reduce((total, entry) => total + entry.completedTranscripts, 0);
+    const creators = creatorArchiveEntries(tasks, runs, transcriptJobs, subscriptions, ledgerSummaries); const archivedWorkCount = creators.reduce((total, entry) => total + Number(entry.ledgerSummary?.total ?? entry.latest?.summary?.totalCount ?? 0), 0); const archivedTranscriptCount = creators.reduce((total, entry) => total + entry.completedTranscripts, 0);
     document.querySelector("#archived-creator-count").textContent = formatNumber(creators.length); document.querySelector("#archived-run-count").textContent = formatNumber(runs.length); document.querySelector("#archived-work-count").textContent = formatNumber(archivedWorkCount); document.querySelector("#archived-transcript-count").textContent = formatNumber(archivedTranscriptCount); document.querySelector("#creator-archive-status").textContent = creators.length ? `已同步 ${creators.length} 个关注来源` : "暂无关注来源";
     renderCreatorArchive(creators);
     if (!document.querySelector("#topics-view").hidden) await refreshTopicAdvisor();
