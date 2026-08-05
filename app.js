@@ -79,6 +79,12 @@ const transcriptFilter = document.querySelector("#transcript-filter");
 const dateFilter = document.querySelector("#date-filter");
 const minLikes = document.querySelector("#min-likes");
 const minInteractions = document.querySelector("#min-interactions");
+const semanticQuery = document.querySelector("#semantic-query");
+const semanticSearchButton = document.querySelector("#semantic-search-button");
+const semanticRerankButton = document.querySelector("#semantic-rerank-button");
+const semanticIndexButton = document.querySelector("#semantic-index-button");
+const semanticClearButton = document.querySelector("#semantic-clear-button");
+const semanticIndexStatus = document.querySelector("#semantic-index-status");
 const workbenchView = document.querySelector("#workbench-view");
 const viewPanels = document.querySelectorAll(".view-panel");
 const viewNames = { workbench: "内容工作台", tasks: "任务中心", archive: "关注与更新", breakdown: "爆款拆解", topics: "选题顾问", agent: "博主智能体", settings: "设置中心", storage: "知识资产目录" };
@@ -95,6 +101,12 @@ let selectedIds = new Set();
 let hasHydratedWorks = false;
 let currentCrawlTaskId = "";
 let currentCrawlStatus = "";
+let semanticResultIds = null;
+let semanticScores = new Map();
+let semanticRanks = new Map();
+let semanticReranked = false;
+let semanticIndexTaskId = "";
+let semanticIndexPollTimer = 0;
 let activeSourceTaskId = "";
 let lastTranscriptSignature = "";
 const openTaskLogs = new Set();
@@ -186,14 +198,19 @@ function activeWorks() {
   const latestDate = new Date(Math.max(...works.map((work) => new Date(work.date))));
   return works.filter((work) => {
     const withinDateRange = !maxAge || ((latestDate - new Date(work.date)) / 86400000) <= maxAge;
-    return (typeFilter.value === "all" || work.contentType === typeFilter.value)
+    return (!semanticResultIds || semanticResultIds.has(work.id))
+      && (typeFilter.value === "all" || work.contentType === typeFilter.value)
       && (transcriptFilter.value === "all" || work.transcript === transcriptFilter.value)
       && withinDateRange
       && work.likes >= Number(minLikes.value || 0)
       && work.interactions >= Number(minInteractions.value || 0);
   });
 }
-function sortedWorks() { return [...activeWorks()].sort((a, b) => String(b[sortKey]).localeCompare(String(a[sortKey]), "zh-CN", { numeric: true })); }
+function sortedWorks() {
+  return [...activeWorks()].sort((a, b) => semanticResultIds
+    ? (semanticScores.get(b.id) || 0) - (semanticScores.get(a.id) || 0)
+    : String(b[sortKey]).localeCompare(String(a[sortKey]), "zh-CN", { numeric: true }));
+}
 function pageCount() { return Math.max(1, Math.ceil(sortedWorks().length / currentPageSize)); }
 function currentWorks() { const start = (currentPage - 1) * currentPageSize; return sortedWorks().slice(start, start + currentPageSize); }
 function workRow(work) {
@@ -202,7 +219,11 @@ function workRow(work) {
   const url = /^https?:\/\//.test(work.douyinUrl || "") ? work.douyinUrl : "#";
   const transcriptClass = work.transcript === "已转写" ? "is-ready" : ["转写失败", "部分转写"].includes(work.transcript) ? "is-failed" : "";
   const provider = work.transcriptProviderLabel ? `<small class="provider-chip">${escapeHtml(work.transcriptProviderLabel)}</small>` : "";
-  return `<tr class="${isTranscribing ? "is-transcribing" : ""}" data-id="${escapeHtml(work.id)}"><td class="check-cell"><input class="work-check" type="checkbox" aria-label="选择 ${escapeHtml(work.title)}" ${selectedIds.has(work.id) ? "checked" : ""} /></td><td><div class="work-title ${isTranscribing ? "is-transcribing" : ""}"><span class="cover ${isImage ? "is-image" : ""}">${isImage ? "图" : "播"}</span><strong>${escapeHtml(work.title)}</strong>${work.titleMissing ? '<i class="metadata-warning">标题缺失</i>' : ""}${isTranscribing ? '<i class="transcribing-indicator">转写中</i>' : ""}</div></td><td>${escapeHtml(work.date)}</td><td><span class="type-tag ${isImage ? "is-image" : ""}">${escapeHtml(work.contentType)}</span></td><td>${formatNumber(work.likes)}</td><td>${formatNumber(work.comments)}</td><td>${formatNumber(work.collects)}</td><td>${formatNumber(work.shares)}</td><td><b class="interaction-value">${formatNumber(work.interactions)}</b></td><td><span class="transcript ${transcriptClass}">${escapeHtml(work.transcript)}</span>${provider}</td><td class="description-cell" title="${escapeHtml(work.description)}">${escapeHtml(work.description)}</td><td><a class="douyin-link" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">查看抖音</a></td></tr>`;
+  const scorePercent = Math.max(0, Math.min(100, Math.round((semanticScores.get(work.id) || 0) * 100)));
+  const semanticScore = semanticScores.has(work.id)
+    ? `<i class="semantic-score">${semanticReranked ? `精排 #${semanticRanks.get(work.id) || "-"}` : `相关 ${scorePercent}%`}</i>`
+    : "";
+  return `<tr class="${isTranscribing ? "is-transcribing" : ""} ${semanticResultIds ? "is-semantic-match" : ""}" data-id="${escapeHtml(work.id)}"><td class="check-cell"><input class="work-check" type="checkbox" aria-label="选择 ${escapeHtml(work.title)}" ${selectedIds.has(work.id) ? "checked" : ""} /></td><td><div class="work-title ${isTranscribing ? "is-transcribing" : ""}"><span class="cover ${isImage ? "is-image" : ""}">${isImage ? "图" : "播"}</span><strong>${escapeHtml(work.title)}</strong>${work.titleMissing ? '<i class="metadata-warning">标题缺失</i>' : ""}${isTranscribing ? '<i class="transcribing-indicator">转写中</i>' : ""}${semanticScore}</div></td><td>${escapeHtml(work.date)}</td><td><span class="type-tag ${isImage ? "is-image" : ""}">${escapeHtml(work.contentType)}</span></td><td>${formatNumber(work.likes)}</td><td>${formatNumber(work.comments)}</td><td>${formatNumber(work.collects)}</td><td>${formatNumber(work.shares)}</td><td><b class="interaction-value">${formatNumber(work.interactions)}</b></td><td><span class="transcript ${transcriptClass}">${escapeHtml(work.transcript)}</span>${provider}</td><td class="description-cell" title="${escapeHtml(work.description)}">${escapeHtml(work.description)}</td><td><a class="douyin-link" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">查看抖音</a></td></tr>`;
 }
 function renderRows() {
   const pageWorks = currentWorks();
@@ -281,13 +302,15 @@ function transcriptionProviderLabel(provider) {
 }
 function isViralTask(task) { return task?.summary?.provider === "viral-breakdown" || String(task?.source || "").startsWith("爆款拆解 / "); }
 function isContentIntelligenceTask(task) { return ["topic-advisor", "creator-agent", "creator-agent-review"].includes(task?.summary?.provider); }
-function isAnalysisTask(task) { return isViralTask(task) || isContentIntelligenceTask(task); }
+function isSemanticTask(task) { return task?.summary?.provider === "semantic-index"; }
+function isAnalysisTask(task) { return isViralTask(task) || isContentIntelligenceTask(task) || isSemanticTask(task); }
 function isDirectoryTask(task) { return !isGetNotesTask(task) && !isAnalysisTask(task); }
 function taskKind(task) {
   const provider = task?.summary?.provider;
   if (provider === "topic-advisor") return "选题顾问";
   if (provider === "creator-agent") return "博主智能体";
   if (provider === "creator-agent-review") return "智能体审稿";
+  if (provider === "semantic-index") return "智能索引";
   if (provider === "cloud-first") return "云端优先转写";
   if (provider === "whisper-first") return "Whisper 优先转写";
   return isViralTask(task) ? "爆款拆解" : provider === "whisper" ? "本地 Whisper" : isGetNotesTask(task) ? "文本提取" : isFavoritesDiscoveryTask(task) ? "收藏夹目录" : "目录抓取";
@@ -352,6 +375,7 @@ function updateSourceProgressMarkup(markup) {
   lastSourceProgressMarkup = markup;
 }
 function taskDisplayName(task) {
+  if (isSemanticTask(task)) return task.creator_name || String(task.source || "").replace("智能索引 / ", "") || "作品语义索引";
   if (task?.summary?.provider === "topic-advisor") return "爆款证据选题批次";
   if (task?.summary?.provider === "creator-agent") return task.creator_name || "博主智能体画像";
   if (task?.summary?.provider === "creator-agent-review") return `${task.creator_name || "博主智能体"} · 稿件审阅`;
@@ -377,6 +401,11 @@ function loopAttemptLabel(task) {
 }
 function auditDetail(task) {
   const summary = task.summary || {};
+  if (isSemanticTask(task)) {
+    if (task.status === "waiting_for_user") return `智能索引已完成：${summary.completed || 0} 条作品、${summary.chunks || 0} 个语义片段可搜索。`;
+    if (task.status === "failed" || task.status === "interrupted_recoverable") return `智能索引失败：${taskFailureDetail(task)}`;
+    return scrubProviderName(task.progress?.detail || task.phase);
+  }
   if (task.source_mode === "favorites" && task.options?.kind === "favorites-discovery") {
     if (task.status === "waiting_for_user") return `已发现 ${summary.collectionCount || 0} 个收藏夹，等待你选择抓取范围。`;
     if (task.status === "failed" || task.status === "interrupted_recoverable") return `收藏夹目录读取失败：${taskFailureDetail(task)}`;
@@ -968,7 +997,7 @@ function renderStorageLocation() {
 function escapeHtml(value) { return scrubProviderName(value).replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[character]); }
 function formatTime(value) { return value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "-"; }
 function taskLabel(status) { return ({ queued: "排队中", running: "处理中", pausing: "正在暂停", paused: "已暂停", waiting_for_action: "等待人工处理", waiting_for_user: "可选择作品", partial: "待复核", failed: "任务失败", interrupted_recoverable: "服务中断" })[status] || status; }
-function taskStatusLabel(task) { return isAnalysisTask(task) && task.status === "waiting_for_user" ? "分析完成" : isAnalysisTask(task) && task.status === "failed" ? "分析失败" : isGetNotesTask(task) && task.status === "waiting_for_user" ? "转写已完成" : isGetNotesTask(task) && task.status === "partial" ? "部分完成" : taskLabel(task.status); }
+function taskStatusLabel(task) { return isSemanticTask(task) && task.status === "waiting_for_user" ? "索引就绪" : isSemanticTask(task) && task.status === "failed" ? "索引失败" : isAnalysisTask(task) && task.status === "waiting_for_user" ? "分析完成" : isAnalysisTask(task) && task.status === "failed" ? "分析失败" : isGetNotesTask(task) && task.status === "waiting_for_user" ? "转写已完成" : isGetNotesTask(task) && task.status === "partial" ? "部分完成" : taskLabel(task.status); }
 function matchesTaskFilter(task, filter) {
   if (!filter) return true;
   if (filter === "active") return ["queued", "running", "pausing"].includes(task.status);
@@ -1034,9 +1063,137 @@ async function refreshTranscriptStates() {
   const { jobs } = await response.json(); const signature = transcriptSignature(jobs); if (signature === lastTranscriptSignature) return;
   lastTranscriptSignature = signature; applyTranscriptJobs(jobs); render();
 }
+
+function setSemanticStatus(message, tone = "") {
+  semanticIndexStatus.textContent = message;
+  semanticIndexStatus.className = tone ? `is-${tone}` : "";
+}
+
+function clearSemanticResults({ clearInput = false } = {}) {
+  semanticResultIds = null;
+  semanticScores = new Map();
+  semanticRanks = new Map();
+  semanticReranked = false;
+  currentPage = 1;
+  semanticRerankButton.disabled = true;
+  semanticClearButton.disabled = true;
+  if (clearInput) semanticQuery.value = "";
+}
+
+async function loadSemanticIndexStatus() {
+  window.clearTimeout(semanticIndexPollTimer);
+  if (!currentCrawlTaskId || currentCrawlStatus === "partial") {
+    semanticIndexButton.disabled = true;
+    semanticSearchButton.disabled = true;
+    setSemanticStatus(currentCrawlStatus === "partial" ? "待复核目录不能建立智能索引" : "打开目录后可建立本地语义索引");
+    return;
+  }
+  try {
+    const response = await fetch(`/api/semantic-index?crawlTaskId=${encodeURIComponent(currentCrawlTaskId)}`, { cache: "no-store" });
+    const status = await readApiPayload(response, "读取智能索引状态失败");
+    if (!response.ok) throw new Error(status.error || "读取智能索引状态失败");
+    const ready = status.indexedWorks > 0;
+    semanticIndexButton.disabled = !status.modelInstalled || !status.inferenceReady || Boolean(status.activeTaskId);
+    semanticIndexButton.textContent = status.activeTaskId ? "索引处理中" : ready ? "更新索引" : "建立索引";
+    semanticSearchButton.disabled = !ready;
+    if (!status.modelInstalled) setSemanticStatus(`${status.modelLabel}尚未安装，请到设置中心下载`, "failed");
+    else if (!status.inferenceReady) setSemanticStatus("本地推理依赖尚未安装，请运行项目诊断", "failed");
+    else if (status.activeTaskId) {
+      semanticIndexTaskId = status.activeTaskId;
+      setSemanticStatus(`${status.modelLabel}正在建立索引`, "busy");
+      pollSemanticIndexTask();
+    } else if (ready) setSemanticStatus(`${status.modelLabel} · 已索引 ${status.indexedWorks} / ${status.totalWorks} 条作品 · ${status.chunks} 个片段`, "ready");
+    else setSemanticStatus(`${status.modelLabel}已就绪，点击“建立索引”后即可搜索`);
+  } catch (error) {
+    semanticIndexButton.disabled = true;
+    semanticSearchButton.disabled = true;
+    setSemanticStatus(scrubProviderName(error.message), "failed");
+  }
+}
+
+async function pollSemanticIndexTask() {
+  if (!semanticIndexTaskId) return;
+  try {
+    const response = await fetch(`/api/tasks/${encodeURIComponent(semanticIndexTaskId)}`, { cache: "no-store" });
+    const task = await readApiPayload(response, "读取智能索引任务失败");
+    if (!response.ok) throw new Error(task.error || "读取智能索引任务失败");
+    if (["queued", "running"].includes(task.status)) {
+      const progress = task.progress || {};
+      const count = progress.expectedTotal ? ` ${progress.discovered || 0} / ${progress.expectedTotal}` : "";
+      setSemanticStatus(`${progress.label || task.phase}${count}`, "busy");
+      semanticIndexPollTimer = window.setTimeout(pollSemanticIndexTask, 1200);
+      return;
+    }
+    semanticIndexTaskId = "";
+    if (task.status === "waiting_for_user") showToast("智能索引已建立，可以输入一句话筛选作品。", "success");
+    else showToast(`智能索引未完成：${scrubProviderName(task.error_message || task.phase)}`, "review");
+    await loadSemanticIndexStatus();
+    await refreshRuntimeViews();
+  } catch (error) {
+    semanticIndexTaskId = "";
+    setSemanticStatus(scrubProviderName(error.message), "failed");
+  }
+}
+
+async function buildSemanticIndex() {
+  if (!currentCrawlTaskId) return;
+  semanticIndexButton.disabled = true;
+  setSemanticStatus("正在创建本地索引任务", "busy");
+  try {
+    const response = await fetch("/api/semantic-indexes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ crawlTaskId: currentCrawlTaskId }),
+    });
+    const payload = await readApiPayload(response, "创建智能索引任务失败");
+    if (!response.ok) throw new Error(payload.error || "创建智能索引任务失败");
+    semanticIndexTaskId = payload.taskId;
+    pollSemanticIndexTask();
+  } catch (error) {
+    setSemanticStatus(scrubProviderName(error.message), "failed");
+    semanticIndexButton.disabled = false;
+    showToast(`建立索引失败：${scrubProviderName(error.message)}`, "review");
+  }
+}
+
+async function runSemanticSearch(rerank = false) {
+  const query = semanticQuery.value.trim();
+  if (!currentCrawlTaskId || query.length < 2) {
+    showToast("请输入至少 2 个字的搜索内容。", "review");
+    return;
+  }
+  semanticSearchButton.disabled = true;
+  semanticRerankButton.disabled = true;
+  setSemanticStatus(rerank ? "分析模型正在精排前 20 个候选" : "本地模型正在计算语义相关度", "busy");
+  try {
+    const response = await fetch("/api/semantic-search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ crawlTaskId: currentCrawlTaskId, query, limit: 100, rerank }),
+    });
+    const payload = await readApiPayload(response, "智能搜索失败");
+    if (!response.ok) throw new Error(payload.error || "智能搜索失败");
+    semanticResultIds = new Set(payload.results.map((item) => String(item.videoId)));
+    semanticReranked = Boolean(payload.reranked);
+    semanticRanks = new Map(payload.results.map((item, index) => [String(item.videoId), index + 1]));
+    semanticScores = new Map(payload.results.map((item, index) => [String(item.videoId), payload.reranked ? 1 - (index / Math.max(1, payload.results.length)) : Number(item.score || 0)]));
+    currentPage = 1;
+    semanticClearButton.disabled = false;
+    semanticRerankButton.disabled = payload.results.length === 0;
+    setSemanticStatus(`${payload.reranked ? `精排复核完成 · ${payload.rerankerModel}` : payload.modelId} · 找到 ${payload.results.length} 条相关作品`, "ready");
+    render();
+  } catch (error) {
+    setSemanticStatus(scrubProviderName(error.message), "failed");
+    showToast(`智能搜索失败：${scrubProviderName(error.message)}`, "review");
+  } finally {
+    semanticSearchButton.disabled = false;
+    if (semanticResultIds?.size) semanticRerankButton.disabled = false;
+  }
+}
+
 async function loadWorksFromTask(taskId, source = "", status = "waiting_for_user") {
   const response = await fetch(`/api/tasks/${taskId}/works`); if (!response.ok) return;
-  const payload = await response.json(); works = payload.works.map(mapWork); currentCrawlTaskId = taskId; currentCrawlStatus = status; selectedIds.clear(); currentPage = 1; hasHydratedWorks = true;
+  const payload = await response.json(); works = payload.works.map(mapWork); currentCrawlTaskId = taskId; currentCrawlStatus = status; selectedIds.clear(); clearSemanticResults({ clearInput: true }); hasHydratedWorks = true;
   workbenchView.classList.add("has-directory");
   const taskResponse = await fetch(`/api/tasks/${taskId}`);
   const task = taskResponse.ok ? await taskResponse.json() : null;
@@ -1066,6 +1223,7 @@ async function loadWorksFromTask(taskId, source = "", status = "waiting_for_user
     directoryModeBanner.replaceChildren();
   }
   render();
+  await loadSemanticIndexStatus();
 }
 async function loadRuntimeConfig() {
   try {
@@ -1721,6 +1879,111 @@ async function loadTranscriptionSettings() {
   document.querySelector("#runtime-diagnostics").innerHTML = Object.entries(settings.diagnostics || {}).map(([key, item]) => `<div class="${item.ready ? "is-ready" : "is-missing"}"><strong>${labels[key] || key}</strong><span>${item.ready ? `已就绪 · ${formatRuntimeSize(item.sizeBytes)}` : "缺失"}</span></div>`).join("");
   document.querySelector("#settings-save-state").innerHTML = `<span></span>${Object.values(settings.diagnostics || {}).every((item) => item.ready) ? "本地运行环境就绪" : "本地运行环境不完整"}`;
 }
+
+let semanticModelPollTimer = 0;
+function semanticModelStatus(model) {
+  if (model.downloading) return `下载中 ${model.progress}%`;
+  if (model.installed) return `已安装 · ${formatRuntimeSize(model.sizeBytes)}`;
+  if (model.status === "failed") return "下载失败";
+  return "未安装";
+}
+function renderSemanticModels(settings) {
+  const runtimeReady = settings.runtime?.pythonReady && settings.runtime?.downloaderReady;
+  document.querySelector("#semantic-runtime-state").textContent = runtimeReady ? `${settings.downloadSource || "下载环境"}已就绪` : "国内下载环境不完整";
+  document.querySelector("#semantic-runtime-state").classList.toggle("is-ready", runtimeReady);
+  document.querySelector("#semantic-model-list").innerHTML = (settings.models || []).map((model) => {
+    const selected = settings.activeModel === model.id;
+    const stateClass = model.installed ? "is-installed" : model.status === "failed" ? "is-failed" : model.downloading ? "is-downloading" : "";
+    const deleteDisabled = !model.installed || model.downloading;
+    return `<article class="semantic-model-card ${selected ? "is-selected" : ""} ${stateClass}" data-semantic-model-card="${escapeHtml(model.id)}">
+      <label class="semantic-model-choice"><input type="radio" name="semantic-active-model" value="${escapeHtml(model.id)}" ${selected ? "checked" : ""} /><span><strong>${escapeHtml(model.label)}</strong><small>${escapeHtml(model.repoId)}</small></span></label>
+      <div class="semantic-model-meta"><span>${escapeHtml(model.approximateSize)}</span><span>${formatNumber(model.dimension)} 维</span><span>${escapeHtml(model.license)}</span></div>
+      <p>${escapeHtml(model.summary)}</p>
+      <div class="semantic-model-progress" ${model.downloading ? "" : "hidden"}><i style="width:${Math.max(0, Math.min(100, model.progress || 0))}%"></i></div>
+      <div class="semantic-model-actions"><em>${escapeHtml(semanticModelStatus(model))}</em><button class="outline-button" type="button" data-semantic-action="detect" data-model-id="${escapeHtml(model.id)}">检测</button><button class="outline-button" type="button" data-semantic-action="download" data-model-id="${escapeHtml(model.id)}" ${model.downloading ? "disabled" : ""}>${model.installed ? "重新下载" : "下载"}</button><button class="text-button danger" type="button" data-semantic-action="delete" data-model-id="${escapeHtml(model.id)}" ${deleteDisabled ? "disabled" : ""}>删除</button></div>
+      ${model.error ? `<small class="semantic-model-error">${escapeHtml(model.error)}</small>` : ""}
+    </article>`;
+  }).join("");
+  const reranker = settings.reranker || {};
+  document.querySelector("#semantic-rerank-model").textContent = reranker.model || "尚未配置分析模型";
+  document.querySelector("#semantic-rerank-state").textContent = reranker.configured ? "已就绪" : "待配置";
+  document.querySelector("#semantic-rerank-state").classList.toggle("is-ready", Boolean(reranker.configured));
+  window.clearTimeout(semanticModelPollTimer);
+  if ((settings.models || []).some((model) => model.downloading)) semanticModelPollTimer = window.setTimeout(loadSemanticModels, 1200);
+}
+async function loadSemanticModels() {
+  try {
+    const response = await fetch("/api/semantic-models", { cache: "no-store" });
+    renderSemanticModels(await readApiPayload(response, "读取智能筛选模型失败"));
+  } catch (error) {
+    document.querySelector("#semantic-model-message").textContent = `模型状态读取失败：${scrubProviderName(error.message)}`;
+  }
+}
+document.querySelector("#semantic-model-list")?.addEventListener("change", async (event) => {
+  const input = event.target.closest('input[name="semantic-active-model"]');
+  if (!input) return;
+  try {
+    const response = await fetch("/api/semantic-models/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ activeModel: input.value }) });
+    const settings = await readApiPayload(response, "切换智能筛选模型失败");
+    renderSemanticModels(settings);
+    clearSemanticResults();
+    render();
+    await loadSemanticIndexStatus();
+    const selected = settings.models.find((model) => model.id === settings.activeModel);
+    showToast(selected?.installed ? `已切换为${selected.label}。` : `已选择${selected?.label || "模型"}，使用前请先下载。`, selected?.installed ? "success" : "review");
+  } catch (error) {
+    showToast(error.message, "review");
+    loadSemanticModels();
+  }
+});
+
+semanticIndexButton?.addEventListener("click", buildSemanticIndex);
+semanticSearchButton?.addEventListener("click", () => runSemanticSearch(false));
+semanticRerankButton?.addEventListener("click", () => runSemanticSearch(true));
+semanticClearButton?.addEventListener("click", async () => {
+  clearSemanticResults({ clearInput: true });
+  render();
+  await loadSemanticIndexStatus();
+});
+semanticQuery?.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  runSemanticSearch(false);
+});
+document.querySelector("#semantic-model-list")?.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-semantic-action]");
+  if (!button) return;
+  const modelId = button.dataset.modelId;
+  const action = button.dataset.semanticAction;
+  if (action === "detect") {
+    await loadSemanticModels();
+    showToast("模型状态已重新检测。", "success");
+    return;
+  }
+  if (action === "download") {
+    const card = button.closest("[data-semantic-model-card]");
+    const label = card?.querySelector("strong")?.textContent || "该模型";
+    const size = card?.querySelector(".semantic-model-meta span")?.textContent || "相应空间";
+    if (!window.confirm(`将下载${label}（${size}）到当前项目。下载可断点复用，但请保持本地服务运行。是否继续？`)) return;
+    button.disabled = true;
+    try {
+      const response = await fetch(`/api/semantic-models/${encodeURIComponent(modelId)}/download`, { method: "POST" });
+      renderSemanticModels(await readApiPayload(response, "启动模型下载失败"));
+      showToast(`${label}已开始下载。`, "success");
+    } catch (error) { showToast(error.message, "review"); loadSemanticModels(); }
+    return;
+  }
+  if (action === "delete") {
+    const label = button.closest("[data-semantic-model-card]")?.querySelector("strong")?.textContent || "该模型";
+    if (!window.confirm(`只删除当前项目内的${label}权重，不影响配置和其他模型。是否删除？`)) return;
+    button.disabled = true;
+    try {
+      const response = await fetch(`/api/semantic-models/${encodeURIComponent(modelId)}`, { method: "DELETE" });
+      renderSemanticModels(await readApiPayload(response, "删除模型失败"));
+      showToast(`${label}已从当前项目删除。`, "success");
+    } catch (error) { showToast(error.message, "review"); loadSemanticModels(); }
+  }
+});
 document.querySelector("#transcription-settings-form")?.addEventListener("submit", async (event) => {
   event.preventDefault();
   const body = {
@@ -1748,6 +2011,7 @@ renderStorageLocation();
 loadRuntimeConfig();
 loadAccountProfiles();
 loadTranscriptionSettings();
+loadSemanticModels();
 refreshRuntimeViews();
 setInterval(refreshRuntimeViews, 2000);
 setInterval(loadAccountProfiles, 5000);

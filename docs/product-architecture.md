@@ -88,6 +88,8 @@ SQLite 不是原始证据，不替代 JSON、Markdown、SRT 或 manifest。删�
 
 作品总账以 `source_key + video_id` 唯一；抓取版本与作品的多对多证据关系保存在 `crawl_run_works`。页面的全局作品数和已完成转写数读取作品总账，单次任务进度仍读取对应批次，二者不得混用。
 
+智能筛选沿用同一作品唯一键。`semantic_documents` 保存参与索引的标题、简介、转写路径和内容哈希；`semantic_embeddings` 按模型与文本分段保存向量。向量只是可重建运行索引，不替代 JSON 或 Markdown。模型切换不会覆盖另一套模型的索引；标题、简介或转写变化时才重算对应作品。
+
 ## 5. 可信度门禁
 
 - 所有外部抓取使用同一 Chrome Profile 串行执行，禁止两个进程争抢登录态。

@@ -1,0 +1,40 @@
+.semantic-search-panel {
+  display: grid;
+  grid-template-columns: minmax(170px, .62fr) minmax(320px, 1.8fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 19px;
+  border-bottom: 1px solid rgba(88, 214, 244, .18);
+  background: linear-gradient(100deg, rgba(10, 35, 54, .68), rgba(10, 8, 35, .72));
+}
+
+.semantic-search-copy { display: grid; gap: 3px; }
+.semantic-search-copy > span { color: var(--cyan); font-size: 9px; font-weight: 900; letter-spacing: 1.4px; }
+.semantic-search-copy strong { font-size: 13px; }
+.semantic-search-copy small { overflow: hidden; color: #837c9b; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.semantic-search-copy small.is-ready { color: var(--green); }
+.semantic-search-copy small.is-busy { color: var(--cyan); }
+.semantic-search-copy small.is-failed { color: #ff9eaa; }
+.semantic-search-box { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.semantic-search-box input { height: 38px; border: 1px solid rgba(142, 124, 202, .3); border-radius: 11px; padding: 0 13px; color: var(--text); outline: none; background: rgba(5, 6, 24, .74); font-size: 12px; }
+.semantic-search-box input:focus { border-color: rgba(88, 214, 244, .7); box-shadow: 0 0 0 3px rgba(88, 214, 244, .08); }
+.semantic-search-box .primary-button { min-height: 38px; padding: 0 16px; }
+.semantic-search-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; }
+.semantic-search-actions button { min-height: 34px; padding: 7px 10px; white-space: nowrap; }
+.semantic-search-actions button:disabled { cursor: not-allowed; opacity: .42; }
+.semantic-score { margin-left: auto; border: 1px solid rgba(88, 214, 244, .26); border-radius: 999px; padding: 3px 6px; color: var(--cyan); background: rgba(88, 214, 244, .08); font-size: 9px; font-style: normal; font-weight: 900; }
+.table-scroll tbody tr.is-semantic-match td { background: linear-gradient(90deg, rgba(88, 214, 244, .045), transparent 46%); }
+
+@media (max-width: 1180px) {
+  .semantic-search-panel { grid-template-columns: 1fr auto; }
+  .semantic-search-copy { grid-column: 1 / -1; }
+  .semantic-search-actions { align-items: flex-end; flex-direction: column; }
+  .semantic-search-actions button { width: 100%; }
+}
+
+@media (max-width: 700px) {
+  .semantic-search-panel { display: flex; align-items: stretch; flex-direction: column; }
+  .semantic-search-box { grid-template-columns: 1fr; }
+  .semantic-search-actions { flex-direction: row; flex-wrap: wrap; }
+  .semantic-search-actions button { width: auto; flex: 1; }
+}

@@ -45,10 +45,31 @@ CreatorDistill 将这些步骤拆成独立、可暂停、可复核的本地阶�
 | 爆款拆解 | 基于多条已转写作品分析 Hook、结构、情绪和互动规律 | 单份报告最多 20 条，结论必须引用作品证据 |
 | 选题顾问 | 从已完成的爆款报告生成带来源的选题 | 不从空白提示直接生成无证据标题 |
 | 博主智能体 | 用多条代表性材料生成画像，并审阅新稿 | 明确“不是本人”，保留证据不足和矛盾项 |
+| 智能筛选 | 用自然语言从标题、简介和已有转写中召回相关作品 | 本地召回不消耗 API；只有用户点击“精排复核”才调用当前分析模型 |
 
 <div align="center">
   <img src="assets/docs/capability-map.svg" alt="CreatorDistill 能力地图" width="100%" />
 </div>
+
+## 用一句话，从几百条作品中找到真正相关的内容
+
+传统关键词搜索只能找到标题里出现过的词。CreatorDistill 的智能筛选会同时理解作品标题、作者简介和已经完成的转写正文，例如输入“普通人如何赚钱”“如何搭建个人知识体系”，即可召回表达不同、但主题相近的作品。
+
+```text
+自然语言问题
+  -> 本地 Embedding 语义召回
+  -> 标题 + 简介 + 转写正文证据片段
+  -> 内容工作台展示相关作品和相关度
+  -> 可选：点击“精排复核”，再由分析模型重排前 20 条
+```
+
+- **正文级搜索**：不仅搜标题，还会索引云端转写和本地 Whisper 正文；同一作品优先使用 Whisper 材料。
+- **默认本地运行**：普通搜索不上传正文、不消耗分析模型 API，也不依赖联网服务。
+- **轻量与高精度双模式**：可在设置中心切换约 96 MB 的轻量模型或约 1.2 GB 的高精度模型。
+- **增量建立索引**：作品以 `source_key + video_id` 唯一标识，只有标题、简介或正文变化时才重新计算。
+- **精排由用户决定**：只有主动点击“精排复核”时，才把本地召回的前 20 条证据发送给已配置的分析模型。
+
+真实回归：姜胡说 645 条作品结合历史转写正文形成 **3,419 个语义片段**；第二次更新复用 **645 / 645** 条作品，重新计算 **0** 条。详细契约与边界见[智能筛选与语义索引](docs/智能筛选与语义索引.md)。
 
 ## 数据流
 
@@ -91,6 +112,7 @@ CreatorDistill 将这些步骤拆成独立、可暂停、可复核的本地阶�
 git clone https://github.com/wl1650918245/douyin-creator-distill.git
 cd douyin-creator-distill
 npm ci
+npm run setup:python
 ```
 
 ### 3. 创建本地配置
@@ -101,6 +123,7 @@ Copy-Item config/model.config.example.json config/model.config.json
 Copy-Item config/text-extraction.config.example.json config/text-extraction.config.json
 Copy-Item config/transcription.config.example.json config/transcription.config.json
 Copy-Item config/account-profiles.config.example.json config/account-profiles.config.json
+Copy-Item config/semantic-search.config.example.json config/semantic-search.config.json
 ```
 
 配置文件只保存在本机，并已加入 `.gitignore`：
@@ -112,6 +135,16 @@ Copy-Item config/account-profiles.config.example.json config/account-profiles.co
 | `config/text-extraction.config.json` | 云端链接转写服务 |
 | `config/transcription.config.json` | 默认转写通道与本地 Whisper 配置 |
 | `config/model.config.json` | 爆款拆解、选题和博主智能体使用的模型 |
+| `config/semantic-search.config.json` | 当前启用的本地智能筛选模型；不包含密钥 |
+
+设置中心提供两套可自由切换的本地语义模型：
+
+- 轻量模式：`BAAI/bge-small-zh-v1.5`，约 96 MB，适合标题、简介和分段正文。
+- 高精度模式：`Qwen/Qwen3-Embedding-0.6B`，约 1.2 GB，适合复杂语义和长文本。
+- 两套权重默认从 ModelScope 国内源按需下载到 `runtime/models/embedding/`，可分别检测、下载和删除，不进入 Git。
+- 精排复核首版复用 `config/model.config.json` 中的分析模型，不额外安装 reranker。
+- 作品唯一键是 `source_key + video_id`；标题、简介或转写变化时通过内容哈希增量重算，不重复索引未变化作品。
+- 详细索引表、分段和搜索边界见 `docs/智能筛选与语义索引.md`。
 
 ### 4. 诊断并启动
 
@@ -131,7 +164,8 @@ npm start
 3. 回到内容工作台，输入抖音号、主页链接或点击“抓取我的收藏夹”。
 4. 在任务中心观察抓取、审核和恢复 Loop。
 5. JSON 审核通过后筛选作品，选择转写通道并提交。
-6. 从已转写作品进入爆款拆解、选题顾问或博主智能体。
+6. 点击“建立智能索引”，即可用自然语言从当前博主的标题、简介和转写正文中筛选作品。
+7. 从已转写作品进入爆款拆解、选题顾问或博主智能体。
 
 独立命令：
 
@@ -196,6 +230,7 @@ Chrome 首轮
 | 爆款拆解 | 已实现 | 多作品报告落盘 |
 | 选题顾问 | 已实现 | 浏览器 UI 回归 |
 | 博主智能体与审稿 | 已实现 | 浏览器 UI 回归 + 审计门禁 |
+| 本地语义索引与智能筛选 | 已实现 | 645 条真实目录、3,419 个正文片段 + Playwright 页面回归 |
 | 收藏夹全目录数量对账 | 持续验证 | 尚未形成跨账号的完整回归证据 |
 | 多用户、云数据库、计费 | 不在 v0.1.0 | 当前是单用户本地产品 |
 

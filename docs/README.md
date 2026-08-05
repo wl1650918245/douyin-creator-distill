@@ -14,6 +14,7 @@
 - `product-architecture.md`：页面职责、模块关系和数据流。
 - `analysis-output-contract.md`：爆款拆解、选题库与博主智能体输出。
 - `本地转写运行环境.md`：FFmpeg、Whisper、模型和依赖诊断边界。
+- `智能筛选与语义索引.md`：本地向量模型、SQLite 索引、增量更新和显式精排边界。
 - `iteration-status.md`：已验证能力、未完成事项和迭代证据。
 - `Demo验收说明.md`：当前可用 Demo 的验收路线、真实产物和已知边界。
 - `GitHub参考与产品决策.md`：外部项目中已借鉴和明确未照搬的做法。

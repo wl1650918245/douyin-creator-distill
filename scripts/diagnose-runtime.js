@@ -7,6 +7,7 @@ const runtime = {
   ffmpeg: path.join(root, "runtime", "bin", "ffmpeg", "ffmpeg.exe"),
   python: path.join(root, "runtime", "python", ".venv", "Scripts", "python.exe"),
   model: path.join(root, "runtime", "models", "faster-whisper-small", "model.bin"),
+  embeddingRoot: path.join(root, "runtime", "models", "embedding"),
 };
 
 function checkFile(label, filepath, minimumBytes = 1) {
@@ -32,10 +33,17 @@ const checks = [
   checkFile("项目独立 Python", runtime.python, 100 * 1024),
   run("FFmpeg 可执行性", runtime.ffmpeg, ["-version"]),
   run("faster-whisper 依赖", runtime.python, ["-c", "import faster_whisper; print(faster_whisper.__version__)"]),
+  run("智能筛选模型国内下载依赖", runtime.python, ["-c", "import modelscope; print(modelscope.__version__)"]),
+  run("智能筛选本地推理依赖", runtime.python, ["-c", "import torch, transformers, sentence_transformers; print('torch=' + torch.__version__ + ', transformers=' + transformers.__version__ + ', sentence-transformers=' + sentence_transformers.__version__)"]),
 ];
 
+for (const [modelId, label] of [["lightweight", "轻量语义模型"], ["high_precision", "高精度语义模型"]]) {
+  const marker = path.join(runtime.embeddingRoot, modelId, ".download-complete.json");
+  console.log(`${fs.existsSync(marker) ? "[已安装]" : "[按需下载]"} ${label}: ${path.dirname(marker)}`);
+}
+
 if (checks.every(Boolean)) {
-  console.log("[结论] 本地 Whisper 运行环境完整。");
+  console.log("[结论] 本地 Whisper 与智能筛选运行环境完整。");
   process.exit(0);
 }
 console.error("[结论] 运行环境不完整，请根据失败项补齐依赖。");

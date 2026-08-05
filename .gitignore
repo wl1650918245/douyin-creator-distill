@@ -11,6 +11,7 @@ config/model.config.json
 config/text-extraction.config.json
 config/transcription.config.json
 config/account-profiles.config.json
+config/semantic-search.config.json
 
 # User-generated assets and runtime state
 DouyinKnowledgeAssets/

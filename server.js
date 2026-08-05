@@ -34,12 +34,14 @@ const { runSubscriptionNow, startSubscriptionScheduler } = require("./src/servic
 const { MAX_WORKS_PER_REPORT, submitViralBreakdown } = require("./src/services/viral-breakdown-service");
 const { creatorTranscriptGroups, readArtifact, submitAgentReview, submitCreatorAgent, submitTopicBatch } = require("./src/services/content-intelligence-service");
 const { getSettings: getTranscriptionSettings, saveSettings: saveTranscriptionSettings } = require("./src/services/transcription-settings-service");
+const semanticModels = require("./src/services/semantic-model-service");
+const semanticSearch = require("./src/services/semantic-search-service");
 const { getAccountProfiles, launchAccountLogin, updateAccountProfiles } = require("./src/services/account-profile-service");
 const { listWorkLedgerSummaries } = require("./src/services/work-ledger-store");
 
 const root = __dirname; const host = "127.0.0.1"; const port = Number(process.env.PORT || 8780);
-const API_VERSION = "2026-08-01.2";
-const API_CAPABILITIES = ["account-profiles", "directory-crawl", "directory-crawl-loop", "favorites-directory", "favorites-directory-cache", "subscriptions", "scheduled-incremental-checks", "work-ledger", "text-extraction", "local-whisper", "transcription-priority-fallback", "transcription-batch-pause-resume", "transcription-batch-retry", "transcription-checkpoint-recovery", "source-transcript-folder", "viral-breakdown", "viral-report-history", "topic-advisor", "creator-agent", "creator-draft-review", "creator-transcript-assets"];
+const API_VERSION = "2026-08-04.1";
+const API_CAPABILITIES = ["account-profiles", "directory-crawl", "directory-crawl-loop", "favorites-directory", "favorites-directory-cache", "subscriptions", "scheduled-incremental-checks", "work-ledger", "text-extraction", "local-whisper", "transcription-priority-fallback", "transcription-batch-pause-resume", "transcription-batch-retry", "transcription-checkpoint-recovery", "source-transcript-folder", "viral-breakdown", "viral-report-history", "topic-advisor", "creator-agent", "creator-draft-review", "creator-transcript-assets", "semantic-model-management", "semantic-index", "semantic-search", "semantic-rerank", "analysis-model-rerank"];
 const types = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -189,6 +191,8 @@ http.createServer(async (request, response) => {
     if (request.method === "GET" && url.pathname === "/api/transcript-jobs") return json(response, 200, { jobs: listTranscriptJobs(url.searchParams.get("crawlTaskId") || "", { all: url.searchParams.get("all") === "1" }) });
     if (request.method === "GET" && url.pathname === "/api/work-ledger-summaries") return json(response, 200, { sources: listWorkLedgerSummaries() });
     if (request.method === "GET" && url.pathname === "/api/transcription-settings") return json(response, 200, getTranscriptionSettings());
+    if (request.method === "GET" && url.pathname === "/api/semantic-models") return json(response, 200, semanticModels.getSettings());
+    if (request.method === "GET" && url.pathname === "/api/semantic-index") return json(response, 200, semanticSearch.indexStatus(url.searchParams.get("crawlTaskId") || ""));
     if (request.method === "GET" && url.pathname === "/api/account-profiles") return json(response, 200, getAccountProfiles());
     if (request.method === "GET" && url.pathname === "/api/favorites-directory-cache") {
       const profile = resolveAccountRole("favorites");
@@ -257,6 +261,19 @@ http.createServer(async (request, response) => {
       return json(response, 202, transcriptionServiceForTask(taskId).retryFailed(taskId));
     }
     if (request.method === "POST" && url.pathname === "/api/transcription-settings") return json(response, 200, saveTranscriptionSettings(await readJson(request)));
+    if (request.method === "POST" && url.pathname === "/api/semantic-models/settings") return json(response, 200, semanticModels.saveSettings(await readJson(request)));
+    if (request.method === "POST" && /^\/api\/semantic-models\/(lightweight|high_precision)\/download$/.test(url.pathname)) return json(response, 202, semanticModels.startDownload(url.pathname.split("/")[3]));
+    if (request.method === "DELETE" && /^\/api\/semantic-models\/(lightweight|high_precision)$/.test(url.pathname)) return json(response, 200, await semanticModels.deleteModel(url.pathname.split("/")[3]));
+    if (request.method === "POST" && url.pathname === "/api/semantic-indexes") {
+      const { crawlTaskId } = await readJson(request);
+      if (typeof crawlTaskId !== "string" || !crawlTaskId.trim()) return json(response, 400, { error: "请先打开作品目录。" });
+      return json(response, 202, semanticSearch.submitIndex(crawlTaskId.trim()));
+    }
+    if (request.method === "POST" && url.pathname === "/api/semantic-search") {
+      const { crawlTaskId, query, limit = 50, rerank = false } = await readJson(request);
+      if (typeof crawlTaskId !== "string" || typeof query !== "string") return json(response, 400, { error: "搜索参数不完整。" });
+      return json(response, 200, await semanticSearch.search({ crawlTaskId: crawlTaskId.trim(), query, limit, rerank: rerank === true }));
+    }
     if (request.method === "POST" && url.pathname === "/api/account-profiles") return json(response, 200, updateAccountProfiles(await readJson(request)));
     if (request.method === "POST" && /^\/api\/account-profiles\/(content|favorites)\/login$/.test(url.pathname)) return json(response, 202, launchAccountLogin(url.pathname.split("/")[3]));
     if (request.method === "POST" && url.pathname === "/api/distillation-pool") { const { crawlTaskId, videoIds } = await readJson(request); const task = getTask(crawlTaskId); const completed = new Set(listTranscriptJobs(crawlTaskId).filter((job) => job.status === "completed").map((job) => String(job.video_id))); if (!task || task.status !== "waiting_for_user" || !Array.isArray(videoIds) || !videoIds.length || videoIds.some((id) => !completed.has(String(id)))) return json(response, 400, { error: "只能将已审核且已完成转写的作品加入蒸馏素材池" }); return json(response, 201, { sources: addDistillationSources(crawlTaskId, [...new Set(videoIds.map(String))]) }); }

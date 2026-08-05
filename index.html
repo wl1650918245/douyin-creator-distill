@@ -8,6 +8,7 @@
     <meta name="description" content="本地优先的抖音创作者内容采集、转写、爆款拆解、选题生成与知识蒸馏 Agent。" />
     <link rel="icon" href="./assets/brand/logo.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./semantic-search.css" />
   </head>
   <body>
     <div class="app-shell">
@@ -59,6 +60,12 @@
           <section id="directory-mode-banner" class="directory-mode-banner" aria-live="polite" hidden></section>
           <section class="content-panel">
           <div class="content-toolbar"><div><span class="section-label"><i></i>作品目录</span><h2>内容列表 <small id="visible-count">86 / 86 条</small></h2></div><div class="toolbar-actions"><button id="select-filtered" class="select-filtered-button" type="button">全选筛选结果 86 条</button><div class="sort-controls" aria-label="排序方式"><span>排序</span><button class="sort-button is-active" type="button" data-sort="date">日期</button><button class="sort-button" type="button" data-sort="likes">点赞</button><button class="sort-button" type="button" data-sort="interactions">总互动</button></div></div></div>
+
+          <section class="semantic-search-panel" aria-labelledby="semantic-search-title">
+            <div class="semantic-search-copy"><span>智能筛选</span><strong id="semantic-search-title">用一句话筛出相关作品</strong><small id="semantic-index-status">打开目录后可建立本地语义索引</small></div>
+            <div class="semantic-search-box"><input id="semantic-query" type="search" maxlength="200" placeholder="例如：关于 Skill、RAG 或普通人赚钱的内容" /><button id="semantic-search-button" class="primary-button" type="button">智能搜索</button></div>
+            <div class="semantic-search-actions"><button id="semantic-rerank-button" class="outline-button" type="button" disabled>精排复核</button><button id="semantic-index-button" class="outline-button" type="button">建立索引</button><button id="semantic-clear-button" class="text-button" type="button" disabled>清除结果</button></div>
+          </section>
 
           <div class="filter-bar" aria-label="目录筛选">
             <label>类型<select id="type-filter"><option value="all">全部</option><option value="视频">视频</option><option value="图文">图文</option></select></label>
@@ -181,6 +188,18 @@
               <small id="cloud-key-status">正在检查密钥配置</small>
               <button class="primary-button" type="submit">保存转写设置</button>
             </form>
+            <section class="history-card storage-card settings-card semantic-settings-card">
+              <div class="semantic-settings-head">
+                <div><span class="section-label"><i></i>智能筛选模型</span><h2>本地语义召回，可自由切换</h2><p>模型按需下载到当前项目。切换只改变后续筛选使用的模型，不会删除另一套权重。</p></div>
+                <span id="semantic-runtime-state" class="semantic-runtime-state">正在检查国内下载环境</span>
+              </div>
+              <div id="semantic-model-list" class="semantic-model-list" aria-live="polite">正在读取模型状态...</div>
+              <article class="semantic-rerank-card">
+                <div><span>精排复核</span><strong id="semantic-rerank-model">正在读取分析模型</strong><small>召回候选由当前分析模型复核；首版不额外安装 reranker。</small></div>
+                <em id="semantic-rerank-state">正在检查</em>
+              </article>
+              <p id="semantic-model-message" class="task-center-note">模型权重不会写入 Git；删除操作只影响当前项目内对应模型目录。</p>
+            </section>
             <section class="history-card storage-card settings-card">
               <span class="section-label"><i></i>默认通道</span>
               <p>每次提交仍会弹窗让用户选择，这里只决定默认建议。</p>
