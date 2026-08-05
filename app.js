@@ -272,6 +272,13 @@ function scrubProviderName(value) {
     .replace(/connect ECONNREFUSED\s+[^\s]+/gi, "分析模型连接被拒绝，请检查网络代理和模型服务状态后重试");
 }
 function isGetNotesTask(task) { return ["getnotes", "whisper", "cloud-first", "whisper-first"].includes(task?.summary?.provider) || String(task?.source || "").startsWith(`${legacyProviderName}转写 / `) || String(task?.source || "").startsWith("文本提取 / ") || String(task?.source || "").startsWith("Whisper转写 / ") || String(task?.source || "").startsWith("云端优先转写 / ") || String(task?.source || "").startsWith("Whisper优先转写 / "); }
+function transcriptionProviderLabel(provider) {
+  if (provider === "whisper") return "本地 Whisper";
+  if (provider === "getnotes") return "云端提取";
+  if (provider === "whisper-first") return "本地优先（失败自动切换）";
+  if (provider === "cloud-first") return "云端优先（额度用尽转本地）";
+  return "等待分配通道";
+}
 function isViralTask(task) { return task?.summary?.provider === "viral-breakdown" || String(task?.source || "").startsWith("爆款拆解 / "); }
 function isContentIntelligenceTask(task) { return ["topic-advisor", "creator-agent", "creator-agent-review"].includes(task?.summary?.provider); }
 function isAnalysisTask(task) { return isViralTask(task) || isContentIntelligenceTask(task); }
@@ -459,6 +466,13 @@ function renderSourceProgress(task) {
     const running = ["running", "queued", "pausing"].includes(task.status);
     const paused = task.status === "paused";
     const hasError = task.status === "partial" || task.status === "failed" || task.status === "interrupted_recoverable";
+    const progress = task.progress || {};
+    const currentTitle = progress.currentTitle || "";
+    const currentVideoId = progress.currentVideoId || "";
+    const currentProvider = progress.currentProvider || summary.preferredProvider || summary.provider;
+    const currentWork = currentTitle || currentVideoId
+      ? `<p class="source-progress-current"><span>正在处理</span><strong title="${escapeHtml(currentTitle || `作品 ${currentVideoId}`)}">${escapeHtml(currentTitle || `作品 ${currentVideoId}`)}</strong>${currentVideoId ? `<code>${escapeHtml(currentVideoId)}</code>` : ""}<em>${escapeHtml(transcriptionProviderLabel(currentProvider))}</em></p>`
+      : `<p class="source-progress-current is-idle"><span>处理对象</span><strong>${escapeHtml(taskDisplayName(task))}</strong><em>${escapeHtml(transcriptionProviderLabel(currentProvider))}</em></p>`;
     const count = `总计 ${total} 条 · 已完成 ${completed}${failed ? ` · 剩余 ${failed}` : ""}${queued ? ` · 待处理 ${queued}` : ""}`;
     const nextStep = hasError
       ? failed
@@ -480,7 +494,7 @@ function renderSourceProgress(task) {
         : failed
           ? `<div class="source-progress-actions"><button class="progress-action primary" type="button" data-transcription-retry="${escapeHtml(task.id)}">继续剩余 ${failed} 条</button></div>`
           : "";
-    updateSourceProgressMarkup(`<div class="source-progress-shell"><div class="progress-orbit" aria-hidden="true"><i></i><b>${hasError ? "!" : paused ? "停" : running ? "转" : "✓"}</b></div><div class="source-progress-body"><div class="source-progress-header"><span class="live-label"><i class="activity-dot"></i>${hasError ? "部分失败" : paused ? "已暂停" : running ? "正在转写" : escapeHtml(taskLabel(task.status))}</span><strong>文本提取</strong><code>${escapeHtml(taskDisplayName(task))}</code><small>${escapeHtml(count)}</small></div><p class="source-progress-detail">${escapeHtml(auditDetail(task))}</p><p class="source-progress-next">${escapeHtml(nextStep)}</p></div>${actions}</div>`);
+    updateSourceProgressMarkup(`<div class="source-progress-shell"><div class="progress-orbit" aria-hidden="true"><i></i><b>${hasError ? "!" : paused ? "停" : running ? "转" : "✓"}</b></div><div class="source-progress-body"><div class="source-progress-header"><span class="live-label"><i class="activity-dot"></i>${hasError ? "部分失败" : paused ? "已暂停" : running ? "正在转写" : escapeHtml(taskLabel(task.status))}</span><strong>文本提取</strong><code>${escapeHtml(taskDisplayName(task))}</code><small>${escapeHtml(count)}</small></div>${currentWork}<p class="source-progress-detail">${escapeHtml(auditDetail(task))}</p><p class="source-progress-next">${escapeHtml(nextStep)}</p></div>${actions}</div>`);
     return;
   }
   const progress = task.progress || {};
@@ -1137,6 +1151,28 @@ function renderCreatorArchive(creators, force = false) {
       : `<button class="primary-button" type="button" data-creator-transcription-retry="${escapeHtml(pendingTranscription.id)}">继续剩余 ${formatNumber(pendingRemaining)} 条</button>`;
   const continuation = pendingTranscription ? `<section class="creator-continuation${transcriptionActive ? " is-active" : ""}"><div><small>${transcriptionActive ? "批处理正在继续" : transcriptionPaused ? "批处理已暂停" : "上次批处理未完成"}</small><strong>总计 ${formatNumber(pendingTotal)} · 已完成 ${formatNumber(pendingCompleted)} · 剩余 ${formatNumber(pendingRemaining)}</strong><span>${transcriptionActive ? "系统正在从 SQLite 断点继续，页面会自动同步进度。" : "继续时只处理未完成作品，已成功内容不会重复转写。"}</span></div><div>${primaryTranscriptionAction}${pendingCompleted ? `<button class="outline-button" type="button" data-creator-transcript-folder="${escapeHtml(pendingTranscription.id)}">打开全部转写位置</button>` : ""}</div></section>` : "";
   detail.innerHTML = `<div class="creator-detail-hero"><div class="creator-detail-identity">${avatarMarkup(isFavorites ? "" : latest?.creator_avatar_url, isFavorites ? "藏" : creator.slice(0, 1), "creator-detail-avatar")}<div><small>${isFavorites ? "我的收藏夹" : "关注博主"}</small><h2>${escapeHtml(creator)}</h2><code>${isFavorites ? `收藏夹账号 · ${escapeHtml(subscription.profile_id || "-")}` : `抖音号 ${escapeHtml(subscription.source)}`}</code></div></div><div class="creator-detail-actions"><span class="task-status ${subscription.enabled ? "ready" : "queued"}">${subscription.enabled ? "定期检查已开启" : "定期检查已暂停"}</span>${latest ? `<button class="outline-button" type="button" data-creator-output-folder="${escapeHtml(latest.id)}">打开原始文件夹</button><button class="primary-button" type="button" data-creator-open="${escapeHtml(latest.id)}" data-creator-status="${escapeHtml(latest.status)}" data-creator-source="${escapeHtml(subscription.source)}">${isReview ? "查看待复核目录" : "打开作品目录"}</button>` : ""}</div></div><section class="subscription-control"><div><span>更新频率</span><select data-subscription-interval="${escapeHtml(subscription.id)}">${intervalOptions}</select></div><div><span>下次检查</span><strong>${subscription.enabled ? formatTime(subscription.next_check_at) : "已暂停"}</strong></div><div><span>最近结果</span><strong>${escapeHtml(subscription.last_error || result)}</strong></div><div class="subscription-actions"><button class="outline-button" type="button" data-subscription-check="${escapeHtml(subscription.id)}">立即检查</button><button class="text-button" type="button" data-subscription-toggle="${escapeHtml(subscription.id)}" data-enabled="${subscription.enabled}">${subscription.enabled ? "暂停更新" : "恢复更新"}</button><button class="text-button danger" type="button" data-subscription-delete="${escapeHtml(subscription.id)}">取消关注</button></div></section>${continuation}<div class="creator-detail-stats"><article><span>最新目录</span><strong>${formatNumber(total)}</strong><small>条作品</small></article><article><span>目录版本</span><strong>${formatNumber(runCount)}</strong><small>次抓取</small></article><article><span>完成转写</span><strong>${formatNumber(completedTranscripts)}</strong><small>条唯一作品</small></article></div><div class="creator-detail-grid"><section><div class="creator-detail-heading"><span>最新资产</span><small>${formatTime(latest?.updated_at)}</small></div><dl class="creator-asset-meta"><div><dt>JSON 审核</dt><dd>${!latest ? "暂无目录" : isReview ? "待复核" : warningCount ? `通过（${warningCount} 条警告）` : "通过"}</dd></div><div><dt>目录规模</dt><dd>${formatNumber(total)} 条</dd></div><div><dt>本地文件</dt><dd title="${escapeHtml(latest?.output_path || subscription.baseline_output_path || "")}">${escapeHtml(latest?.output_path || subscription.baseline_output_path || "尚未生成")}</dd></div></dl></section><section><div class="creator-detail-heading"><span>最近抓取</span><small>最近 5 次</small></div><div class="creator-run-list">${recentRuns}</div></section><section class="creator-transcript-section"><div class="creator-detail-heading"><span>已转写作品</span><small>共 ${formatNumber(completedTranscripts)} 条，显示最近 8 条</small></div><div class="creator-transcript-list">${transcriptItems}</div></section></div><p id="archive-storage-note" class="creator-detail-root">知识资产根目录：<code data-asset-root>${escapeHtml(storageRoots[storageMode])}</code></p>`;
+  const statCards = [...detail.querySelectorAll(".creator-detail-stats article")];
+  const [directoryCard, runsCard, transcriptsCard] = statCards;
+  const configureCard = (card, hint, enabled) => {
+    if (!card) return;
+    card.classList.add("creator-stat-card");
+    card.querySelector("small").textContent = hint;
+    card.setAttribute("role", "button");
+    card.setAttribute("aria-disabled", String(!enabled));
+    card.tabIndex = enabled ? 0 : -1;
+  };
+  configureCard(directoryCard, latest ? "进入作品列表 →" : "尚未生成", Boolean(latest));
+  configureCard(runsCard, runCount ? "查看抓取记录 ↓" : "暂无版本", runCount > 0);
+  configureCard(transcriptsCard, completedTranscripts ? "打开本地资产 →" : "暂无转写", completedTranscripts > 0);
+  if (latest && directoryCard) {
+    directoryCard.dataset.creatorOpen = latest.id;
+    directoryCard.dataset.creatorStatus = latest.status;
+    directoryCard.dataset.creatorSource = subscription.source;
+  }
+  if (runCount && runsCard) runsCard.dataset.creatorScrollRuns = "true";
+  if (completedTranscripts && transcriptsCard) transcriptsCard.dataset.creatorTranscriptSource = source;
+  const runsSection = detail.querySelectorAll(".creator-detail-grid > section")[1];
+  if (runsSection) runsSection.dataset.creatorRuns = "true";
 }
 function taskAccountContext(task) {
   if (!task.account_role && !task.profile_id) return "";
@@ -1459,6 +1495,8 @@ document.querySelector("#archive-view").addEventListener("click", async (event) 
   const openButton = event.target.closest("[data-creator-open]");
   const selectButton = event.target.closest("[data-creator-select]");
   const transcriptButton = event.target.closest("[data-creator-transcript-folder]");
+  const transcriptSourceButton = event.target.closest("[data-creator-transcript-source]");
+  const scrollRunsButton = event.target.closest("[data-creator-scroll-runs]");
   const retryTranscriptionButton = event.target.closest("[data-creator-transcription-retry]");
   const resumeTranscriptionButton = event.target.closest("[data-creator-transcription-resume]");
   const taskCenterButton = event.target.closest("[data-creator-task-center]");
@@ -1468,6 +1506,21 @@ document.querySelector("#archive-view").addEventListener("click", async (event) 
   const deleteButton = event.target.closest("[data-subscription-delete]");
   if (selectButton) { selectedCreatorSource = selectButton.dataset.creatorSelect; renderCreatorArchive(archiveCreators, true); }
   if (openButton) await showTaskDirectory(openButton.dataset.creatorOpen, openButton.dataset.creatorStatus, openButton.dataset.creatorSource);
+  if (scrollRunsButton) {
+    const runs = document.querySelector("#creator-archive-detail [data-creator-runs]");
+    runs?.scrollIntoView({ behavior: "smooth", block: "center" });
+    runs?.classList.add("is-highlighted");
+    window.setTimeout(() => runs?.classList.remove("is-highlighted"), 1200);
+  }
+  if (transcriptSourceButton) {
+    try {
+      const response = await fetch(`/api/sources/${encodeURIComponent(transcriptSourceButton.dataset.creatorTranscriptSource)}/open-transcript-folder`, { method: "POST" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "无法打开转写资产目录");
+      const channelCount = Array.isArray(payload.folders) ? payload.folders.length : 1;
+      showToast(`已打开 ${channelCount} 个本地转写通道目录。`, "success");
+    } catch (error) { showToast(scrubProviderName(error.message), "review"); }
+  }
   if (retryTranscriptionButton) await controlTranscriptionBatch(retryTranscriptionButton.dataset.creatorTranscriptionRetry, "retry-failed");
   if (resumeTranscriptionButton) await controlTranscriptionBatch(resumeTranscriptionButton.dataset.creatorTranscriptionResume, "resume");
   if (taskCenterButton) setActiveView("tasks");
@@ -1516,6 +1569,12 @@ document.querySelector("#archive-view").addEventListener("click", async (event) 
     } catch (error) { showToast(`无法打开转写文件夹：${scrubProviderName(error.message)}`, "review"); }
   }
   if (event.target.closest("[data-return-workbench]")) setActiveView("workbench");
+});
+document.querySelector("#archive-view").addEventListener("keydown", (event) => {
+  const card = event.target.closest(".creator-stat-card[role='button']");
+  if (!card || card.getAttribute("aria-disabled") === "true" || !["Enter", " "].includes(event.key)) return;
+  event.preventDefault();
+  card.click();
 });
 document.querySelector("#archive-view").addEventListener("change", async (event) => {
   const intervalSelect = event.target.closest("[data-subscription-interval]");

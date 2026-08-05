@@ -113,6 +113,7 @@ function readRoleStatus(role) {
     phase: String(status?.phase || "not_verified"),
     updatedAt: status?.updatedAt || "",
     verifiedAt: status?.verifiedAt || "",
+    helperPid: Number(status?.helperPid || 0) || null,
     error: status?.error ? String(status.error) : "",
   };
 }

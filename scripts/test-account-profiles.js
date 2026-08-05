@@ -4,12 +4,15 @@ const os = require("os");
 const path = require("path");
 
 const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "self-media-account-profiles-"));
+process.env.KNOWLEDGE_ASSET_ROOT = temporaryDirectory;
 process.env.ACCOUNT_PROFILES_CONFIG_PATH = path.join(temporaryDirectory, "account-profiles.config.json");
 
 const {
   publicAccountProfiles,
+  readRoleStatus,
   resolveAccountRole,
   saveAccountProfiles,
+  writeRoleStatus,
 } = require("../src/config/account-profiles");
 
 try {
@@ -25,6 +28,11 @@ try {
   assert.equal(independent.favoritesBinding, "independent");
   assert.notEqual(independent.roles.content.effectiveProfileId, independent.roles.favorites.effectiveProfileId);
   assert.equal(independent.roles.favorites.shared, false);
+
+  writeRoleStatus("favorites", { ready: false, phase: "waiting_for_login", helperPid: 12345 });
+  const loginStatus = readRoleStatus("favorites");
+  assert.equal(loginStatus.helperPid, 12345);
+  assert.equal(loginStatus.phase, "waiting_for_login");
 
   assert.throws(() => saveAccountProfiles({ favoritesBinding: "invalid" }), /shared 或 independent/);
   assert.throws(() => resolveAccountRole("unknown"), /content 或 favorites/);

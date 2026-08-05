@@ -38,8 +38,8 @@ const { getAccountProfiles, launchAccountLogin, updateAccountProfiles } = requir
 const { listWorkLedgerSummaries } = require("./src/services/work-ledger-store");
 
 const root = __dirname; const host = "127.0.0.1"; const port = Number(process.env.PORT || 8780);
-const API_VERSION = "2026-08-01.1";
-const API_CAPABILITIES = ["account-profiles", "directory-crawl", "directory-crawl-loop", "favorites-directory", "favorites-directory-cache", "subscriptions", "scheduled-incremental-checks", "work-ledger", "text-extraction", "local-whisper", "transcription-priority-fallback", "transcription-batch-pause-resume", "transcription-batch-retry", "transcription-checkpoint-recovery", "viral-breakdown", "viral-report-history", "topic-advisor", "creator-agent", "creator-draft-review", "creator-transcript-assets"];
+const API_VERSION = "2026-08-01.2";
+const API_CAPABILITIES = ["account-profiles", "directory-crawl", "directory-crawl-loop", "favorites-directory", "favorites-directory-cache", "subscriptions", "scheduled-incremental-checks", "work-ledger", "text-extraction", "local-whisper", "transcription-priority-fallback", "transcription-batch-pause-resume", "transcription-batch-retry", "transcription-checkpoint-recovery", "source-transcript-folder", "viral-breakdown", "viral-report-history", "topic-advisor", "creator-agent", "creator-draft-review", "creator-transcript-assets"];
 const types = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -87,6 +87,50 @@ function openTaskOutputFolder(taskId) {
   if (!outputPath.toLowerCase().startsWith(rootPrefix)) throw new Error("原始 JSON 不在知识资产目录中");
   const folder = path.dirname(outputPath); const explorer = spawn("explorer.exe", [folder], { detached: true, stdio: "ignore", windowsHide: false }); explorer.unref();
   return folder;
+}
+function taskSourceKey(task) {
+  if (task?.source_mode === "favorites") return `favorites:${task.profile_id || "favorites-default"}`;
+  return `creator:${String(task?.source || "").trim().toLowerCase()}`;
+}
+function commonDirectory(folders) {
+  let common = path.resolve(folders[0]);
+  for (const folder of folders.slice(1)) {
+    const candidate = path.resolve(folder);
+    while (candidate.toLowerCase() !== common.toLowerCase() && !candidate.toLowerCase().startsWith(`${common}${path.sep}`.toLowerCase())) {
+      const parent = path.dirname(common);
+      if (parent === common) break;
+      common = parent;
+    }
+  }
+  return common;
+}
+function openSourceTranscriptFolders(sourceKey) {
+  if (!/^(creator|favorites):/.test(sourceKey)) throw new Error("来源标识无效");
+  const taskCache = new Map();
+  const groups = new Map();
+  for (const job of listTranscriptJobs(null, { all: true })) {
+    if (job.status !== "completed" || !job.output_path || !fs.existsSync(job.output_path)) continue;
+    let crawlTask = taskCache.get(job.crawl_task_id);
+    if (crawlTask === undefined) {
+      crawlTask = getTask(job.crawl_task_id);
+      taskCache.set(job.crawl_task_id, crawlTask || null);
+    }
+    if (!crawlTask || taskSourceKey(crawlTask) !== sourceKey) continue;
+    const provider = job.provider === "whisper" ? "whisper" : "cloud";
+    const folders = groups.get(provider) || [];
+    folders.push(path.dirname(path.resolve(job.output_path)));
+    groups.set(provider, folders);
+  }
+  const assetRoot = path.resolve(KNOWLEDGE_ASSET_ROOT);
+  const rootPrefix = `${assetRoot}${path.sep}`.toLowerCase();
+  const folders = [...groups.values()].map(commonDirectory).filter((folder) => folder.toLowerCase().startsWith(rootPrefix));
+  if (!folders.length) throw new Error("该来源尚无可定位的本地转写文件");
+  const uniqueFolders = [...new Set(folders)];
+  uniqueFolders.forEach((folder) => {
+    const explorer = spawn("explorer.exe", [folder], { detached: true, stdio: "ignore", windowsHide: false });
+    explorer.unref();
+  });
+  return uniqueFolders;
 }
 function transcriptionServiceForTask(taskId) {
   const task = getTask(taskId);
@@ -218,6 +262,7 @@ http.createServer(async (request, response) => {
     if (request.method === "POST" && url.pathname === "/api/distillation-pool") { const { crawlTaskId, videoIds } = await readJson(request); const task = getTask(crawlTaskId); const completed = new Set(listTranscriptJobs(crawlTaskId).filter((job) => job.status === "completed").map((job) => String(job.video_id))); if (!task || task.status !== "waiting_for_user" || !Array.isArray(videoIds) || !videoIds.length || videoIds.some((id) => !completed.has(String(id)))) return json(response, 400, { error: "只能将已审核且已完成转写的作品加入蒸馏素材池" }); return json(response, 201, { sources: addDistillationSources(crawlTaskId, [...new Set(videoIds.map(String))]) }); }
     if (request.method === "POST" && /^\/api\/tasks\/[^/]+\/open-transcript-folder$/.test(url.pathname)) { const taskId = url.pathname.split("/")[3]; const folders = openTranscriptFolder(taskId); return json(response, 200, { ok: true, folder: folders[0], folders }); }
     if (request.method === "POST" && /^\/api\/tasks\/[^/]+\/open-output-folder$/.test(url.pathname)) return json(response, 200, { ok: true, folder: openTaskOutputFolder(url.pathname.split("/")[3]) });
+    if (request.method === "POST" && /^\/api\/sources\/[^/]+\/open-transcript-folder$/.test(url.pathname)) { const sourceKey = decodeURIComponent(url.pathname.split("/")[3]); const folders = openSourceTranscriptFolders(sourceKey); return json(response, 200, { ok: true, folder: folders[0], folders }); }
     if (request.method === "POST" && /^\/api\/viral-reports\/[^/]+\/open-folder$/.test(url.pathname)) return json(response, 200, { ok: true, folder: openViralReportFolder(url.pathname.split("/")[3]) });
     if (request.method === "POST" && url.pathname === "/api/viral-breakdowns") { const { crawlTaskId, videoIds } = await readJson(request); if (typeof crawlTaskId !== "string" || !Array.isArray(videoIds) || !videoIds.length || videoIds.length > MAX_WORKS_PER_REPORT) return json(response, 400, { error: `请选择 1 至 ${MAX_WORKS_PER_REPORT} 条已转写作品后再拆解` }); return json(response, 202, submitViralBreakdown({ crawlTaskId, videoIds })); }
     if (request.method === "POST" && url.pathname === "/api/topic-batches") {

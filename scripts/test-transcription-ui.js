@@ -50,6 +50,18 @@ const baseUrl = process.env.TEST_BASE_URL || "http://127.0.0.1:8780";
     }));
     assert.match(await page.locator("#source-progress").innerText(), /总计 639 条.*已完成 317.*剩余 322/s);
     assert.equal(await page.locator('#source-progress [data-transcription-retry="partial-batch"]').innerText(), "继续剩余 322 条");
+    await page.evaluate(() => renderSourceProgress({
+      id: "running-batch",
+      source: "云端优先转写 / jianghushuo",
+      creator_name: "姜胡说",
+      status: "running",
+      progress: { currentVideoId: "7663157184638105158", currentTitle: "蒸馏你的 CEO 太爽了", currentProvider: "whisper" },
+      summary: { provider: "cloud-first", totalCount: 639, completed: 357, queued: 281, running: 1 },
+    }));
+    const runningText = await page.locator("#source-progress").innerText();
+    assert.match(runningText, /蒸馏你的 CEO 太爽了/);
+    assert.match(runningText, /7663157184638105158/);
+    assert.match(runningText, /本地 Whisper/);
     const pendingTaskId = await page.evaluate(() => {
       activeSourceTaskId = "";
       return sourceProgressTask([
@@ -83,6 +95,21 @@ const baseUrl = process.env.TEST_BASE_URL || "http://127.0.0.1:8780";
     ])[0]);
     assert.equal(ledgerArchiveSummary.completedTranscripts, 336, "关注页应优先读取作品总账的全局转写数量");
     assert.equal(ledgerArchiveSummary.ledgerSummary.total, 641, "关注页应保留作品总账的唯一作品数量");
+    await page.evaluate(() => renderCreatorArchive([{
+      source: "creator:jianghushuo",
+      subscription: { id: "subscription-ui", source_key: "creator:jianghushuo", source_type: "creator", source: "jianghushuo", display_name: "姜胡说", enabled: true, check_interval_minutes: 1440, updated_at: "2026-08-01T12:00:00Z" },
+      latest: { id: "crawl-ui", source: "jianghushuo", status: "waiting_for_user", output_path: "C:\\assets\\jianghushuo.json", updated_at: "2026-08-01T12:00:00Z", summary: { totalCount: 641 } },
+      runCount: 2,
+      completedTranscripts: 336,
+      relatedRuns: [{ task_id: "crawl-ui", total_count: 641, audit_status: "passed", created_at: "2026-08-01T12:00:00Z" }],
+      transcripts: [],
+      pendingTranscription: null,
+    }], true));
+    const statCards = page.locator("#creator-archive-detail .creator-stat-card");
+    assert.equal(await statCards.count(), 3);
+    assert.equal(await statCards.nth(0).getAttribute("data-creator-open"), "crawl-ui");
+    assert.equal(await statCards.nth(1).getAttribute("data-creator-scroll-runs"), "true");
+    assert.equal(await statCards.nth(2).getAttribute("data-creator-transcript-source"), "creator:jianghushuo");
     assert.deepEqual(pageErrors, []);
     console.log("transcription priority ui ok");
   } finally {

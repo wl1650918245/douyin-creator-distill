@@ -67,7 +67,7 @@ function createTranscriptionBatchOrchestrator(options) {
   function syncSummary(taskId, fields = {}) {
     const jobs = listTranscriptJobsForTask(taskId);
     const summary = { ...(getTask(taskId)?.summary || {}), ...summarize(jobs, provider) };
-    const { stage, currentVideoId, ...taskFields } = fields;
+    const { stage, currentVideoId, currentTitle, currentProvider, ...taskFields } = fields;
     updateTaskProgress(taskId, {
       stage: stage || "batch",
       label: fields.phase || runningPhase,
@@ -77,6 +77,8 @@ function createTranscriptionBatchOrchestrator(options) {
       failed: summary.failed,
       queued: summary.queued,
       currentVideoId: currentVideoId || "",
+      currentTitle: currentTitle || "",
+      currentProvider: currentProvider || "",
     });
     const updated = updateTask(taskId, {
       ...taskFields,
@@ -132,6 +134,8 @@ function createTranscriptionBatchOrchestrator(options) {
           error_message: null,
           stage: "running",
           currentVideoId: job.video_id,
+          currentTitle: job.title,
+          currentProvider: job.provider,
         });
 
         try {

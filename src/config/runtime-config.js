@@ -101,7 +101,7 @@ function acquireProfileLock(profilePath) {
     const ownedByActiveOperation = existing?.pid === process.pid && activeLockId && existing.lockId === activeLockId;
     if (ownedByActiveOperation || (existing?.pid && existing.pid !== process.pid && isProcessAlive(existing.pid))) {
       const holder = existing?.pid ? `PID ${existing.pid}` : "another process";
-      const busyError = new Error(`Chrome profile is already in use by ${holder}. Run Douyin crawl tasks serially for this profile.`);
+      const busyError = new Error(`Chrome Profile 正被 ${holder} 占用。请先关闭对应的账号登录窗口；抓取任务必须串行执行。`);
       busyError.code = "PROFILE_LOCK_BUSY";
       throw busyError;
     }
@@ -193,6 +193,7 @@ module.exports = {
   getAccountTopicLibraryDir,
   getAccountTranscriptDir,
   getAccountViralBreakdownDir,
+  isProcessAlive,
   loadJsonFile,
   resolveChromeProfile,
   sanitizeAccountSlug,

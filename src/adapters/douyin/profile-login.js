@@ -11,7 +11,9 @@ const roleArg = process.argv.find((arg) => arg.startsWith('--role='));
 const role = roleArg ? roleArg.slice('--role='.length) : 'content';
 const account = resolveAccountRole(role);
 
-function writeStatus(status) { return writeRoleStatus(role, status); }
+function writeStatus(status) {
+  return writeRoleStatus(role, { helperPid: process.pid, ...status });
+}
 
 async function checkLoginReady(page) {
   try {
@@ -61,7 +63,7 @@ async function main() {
     console.log('DouyinScraper profile browser is open.');
     console.log(`Log in for role=${role}, profile=${account.profileId}.`);
     console.log('Only run one task at a time against this profile.');
-    console.log('This helper will keep the browser open for up to 15 minutes.');
+    console.log('This helper will close automatically after login is verified.');
 
     writeStatus({
       ready: false,
@@ -93,7 +95,7 @@ async function main() {
       if (status.ready) {
         verified = true;
         console.log('Dedicated Douyin profile is logged in and ready.');
-        console.log('You can leave this browser open or close it manually.');
+        console.log('Login state is being saved; the browser will close automatically.');
         writeStatus({
           ready: true,
           phase: 'login_ready',
@@ -101,7 +103,8 @@ async function main() {
           statusCode: status.statusCode,
           statusMsg: status.statusMsg,
         });
-        await new Promise((resolve) => setTimeout(resolve, 10 * 60 * 1000));
+        // Give Chrome a short window to flush cookies before releasing the profile lock.
+        await new Promise((resolve) => setTimeout(resolve, 2000));
         break;
       }
     }

@@ -99,6 +99,10 @@ async function testPauseAndResume() {
 
   orchestrator.enqueue(batch.taskId, batch.crawlTaskId);
   await waitFor(() => store.listTranscriptJobsForTask(batch.taskId).some((job) => job.status === "running"), "首条作品进入执行中");
+  const liveProgress = store.getTask(batch.taskId).progress;
+  assert.equal(liveProgress.currentVideoId, "1");
+  assert.equal(liveProgress.currentTitle, "pause-1");
+  assert.equal(liveProgress.currentProvider, "whisper");
   orchestrator.pause(batch.taskId);
   await waitFor(() => store.getTask(batch.taskId).status === "paused", "安全暂停生效");
   const paused = orchestrator.summarize(batch.taskId);

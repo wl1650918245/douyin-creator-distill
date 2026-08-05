@@ -120,7 +120,7 @@ function writeManifest(directory, crawlTask, work, artifacts) {
 async function downloadMedia(taskId, job, cookiesPath) {
   const downloadDir = path.join(RUNTIME_DIR, "downloads", taskId, job.video_id);
   ensureDir(downloadDir);
-  updateTaskProgress(taskId, { stage: "download", label: `正在下载作品 ${job.video_id}`, currentVideoId: job.video_id });
+  updateTaskProgress(taskId, { stage: "download", label: `正在下载作品 ${job.video_id}`, currentVideoId: job.video_id, currentTitle: job.title, currentProvider: "whisper" });
   await runProcess(PYTHON_PATH, [
     "-m", "yt_dlp",
     "--cookies", cookiesPath,
@@ -167,6 +167,8 @@ async function transcribeMedia(taskId, job, crawlTask, work, mediaPath, destinat
             stage: event.stage,
             label: event.message,
             currentVideoId: job.video_id,
+            currentTitle: job.title,
+            currentProvider: "whisper",
             seconds: event.seconds,
             segments: event.segments,
           });
