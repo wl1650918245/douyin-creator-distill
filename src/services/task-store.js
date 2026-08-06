@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { DatabaseSync } = require("node:sqlite");
 const { RUNTIME_DIR, ensureDir } = require("../config/runtime-config");
+const { MAX_TOTAL_ATTEMPTS, canRetryTranscriptJob } = require("./transcription-error-policy");
 
 ensureDir(RUNTIME_DIR);
 const db = new DatabaseSync(path.join(RUNTIME_DIR, "agent-state.sqlite"));
@@ -26,6 +27,9 @@ try { db.exec("ALTER TABLE transcript_jobs ADD COLUMN attempt_count INTEGER NOT 
 try { db.exec("ALTER TABLE transcript_jobs ADD COLUMN max_attempts INTEGER NOT NULL DEFAULT 3"); } catch (error) { if (!String(error.message).includes("duplicate column")) throw error; }
 try { db.exec("ALTER TABLE transcript_jobs ADD COLUMN last_started_at TEXT"); } catch (error) { if (!String(error.message).includes("duplicate column")) throw error; }
 try { db.exec("ALTER TABLE transcript_jobs ADD COLUMN provider_started_at TEXT"); } catch (error) { if (!String(error.message).includes("duplicate column")) throw error; }
+try { db.exec("ALTER TABLE transcript_jobs ADD COLUMN error_class TEXT"); } catch (error) { if (!String(error.message).includes("duplicate column")) throw error; }
+try { db.exec("ALTER TABLE transcript_jobs ADD COLUMN retryable INTEGER"); } catch (error) { if (!String(error.message).includes("duplicate column")) throw error; }
+try { db.exec("ALTER TABLE transcript_jobs ADD COLUMN terminal_reason TEXT"); } catch (error) { if (!String(error.message).includes("duplicate column")) throw error; }
 try { db.exec("ALTER TABLE tasks ADD COLUMN source_mode TEXT"); } catch (error) { if (!String(error.message).includes("duplicate column")) throw error; }
 try { db.exec("ALTER TABLE tasks ADD COLUMN account_role TEXT"); } catch (error) { if (!String(error.message).includes("duplicate column")) throw error; }
 try { db.exec("ALTER TABLE tasks ADD COLUMN profile_id TEXT"); } catch (error) { if (!String(error.message).includes("duplicate column")) throw error; }
@@ -34,6 +38,10 @@ try { db.exec("ALTER TABLE subscriptions ADD COLUMN deleted_at TEXT"); } catch (
 db.prepare(`UPDATE transcript_jobs SET provider_started_at=created_at
   WHERE provider='getnotes' AND provider_started_at IS NULL
     AND (COALESCE(provider_task_id,'') != '' OR COALESCE(note_id,'') != '')`).run();
+db.prepare(`UPDATE transcript_jobs
+  SET error_class='provider_task_failed', retryable=0, terminal_reason=error_message
+  WHERE status IN ('failed','partial') AND error_class IS NULL
+    AND error_message LIKE '%任务失败：%'`).run();
 const workLedger = require("./work-ledger-store");
 
 function syncWorkLedger(jobId) {
@@ -168,14 +176,24 @@ function countCloudTranscriptJobsSince(since) {
       AND provider_started_at>=?`).get(since);
   return Number(row?.total || 0);
 }
-function retryTranscriptJobs(taskId) {
+function retryTranscriptJobs(taskId, retryOptions = {}) {
+  const options = typeof retryOptions === "function"
+    ? { providerResolver: retryOptions }
+    : (retryOptions || {});
   const jobs = listTranscriptJobsForTask(taskId);
-  const retryable = jobs.filter((job) => ["failed", "partial"].includes(job.status));
+  const retryable = jobs.filter((job) => canRetryTranscriptJob(job)
+    && (!options.retryFilter || options.retryFilter(job)));
   const statement = db.prepare(`UPDATE transcript_jobs
-    SET status='queued', error_message=NULL, max_attempts=attempt_count+3, updated_at=?
+    SET status='queued', provider=?, error_message=NULL, error_class=NULL, retryable=NULL,
+      terminal_reason=NULL, max_attempts=MIN(attempt_count+3, ?), updated_at=?
     WHERE id=?`);
   const time = now();
-  retryable.forEach((job) => statement.run(time, job.id));
+  retryable.forEach((job) => statement.run(
+    options.providerResolver ? options.providerResolver(job) : job.provider,
+    MAX_TOTAL_ATTEMPTS,
+    time,
+    job.id,
+  ));
   return retryable.length;
 }
 function resetInterruptedTranscriptJobs(taskId) {

@@ -41,7 +41,7 @@ const { listWorkLedgerSummaries } = require("./src/services/work-ledger-store");
 
 const root = __dirname; const host = "127.0.0.1"; const port = Number(process.env.PORT || 8780);
 const API_VERSION = "2026-08-04.1";
-const API_CAPABILITIES = ["account-profiles", "directory-crawl", "directory-crawl-loop", "favorites-directory", "favorites-directory-cache", "subscriptions", "scheduled-incremental-checks", "work-ledger", "text-extraction", "local-whisper", "transcription-priority-fallback", "transcription-batch-pause-resume", "transcription-batch-retry", "transcription-checkpoint-recovery", "source-transcript-folder", "viral-breakdown", "viral-report-history", "topic-advisor", "creator-agent", "creator-draft-review", "creator-transcript-assets", "semantic-model-management", "semantic-index", "semantic-search", "semantic-rerank", "analysis-model-rerank"];
+const API_CAPABILITIES = ["account-profiles", "directory-crawl", "directory-crawl-loop", "favorites-directory", "favorites-directory-cache", "subscriptions", "scheduled-incremental-checks", "work-ledger", "text-extraction", "local-whisper", "transcription-priority-fallback", "transcription-batch-pause-resume", "transcription-batch-retry", "transcription-checkpoint-recovery", "source-transcript-folder", "viral-breakdown", "viral-report-history", "topic-advisor", "creator-agent", "creator-draft-review", "creator-transcript-assets", "semantic-model-management", "semantic-index", "semantic-search", "semantic-cross-source-search", "semantic-rerank", "analysis-model-rerank"];
 const types = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -193,6 +193,7 @@ http.createServer(async (request, response) => {
     if (request.method === "GET" && url.pathname === "/api/transcription-settings") return json(response, 200, getTranscriptionSettings());
     if (request.method === "GET" && url.pathname === "/api/semantic-models") return json(response, 200, semanticModels.getSettings());
     if (request.method === "GET" && url.pathname === "/api/semantic-index") return json(response, 200, semanticSearch.indexStatus(url.searchParams.get("crawlTaskId") || ""));
+    if (request.method === "GET" && url.pathname === "/api/semantic-sources") return json(response, 200, semanticSearch.listSources());
     if (request.method === "GET" && url.pathname === "/api/account-profiles") return json(response, 200, getAccountProfiles());
     if (request.method === "GET" && url.pathname === "/api/favorites-directory-cache") {
       const profile = resolveAccountRole("favorites");
@@ -258,7 +259,39 @@ http.createServer(async (request, response) => {
     }
     if (request.method === "POST" && /^\/api\/transcription-batches\/[^/]+\/retry-failed$/.test(url.pathname)) {
       const taskId = url.pathname.split("/")[3];
-      return json(response, 202, transcriptionServiceForTask(taskId).retryFailed(taskId));
+      const { provider = "" } = await readJson(request);
+      return json(response, 202, provider
+        ? hybridTranscription.retryFailed(taskId, provider)
+        : transcriptionServiceForTask(taskId).retryFailed(taskId));
+    }
+    if (request.method === "GET" && /^\/api\/transcription-batches\/[^/]+\/failures$/.test(url.pathname)) {
+      const taskId = url.pathname.split("/")[3];
+      const task = getTask(taskId);
+      if (!task) return json(response, 404, { error: "转写任务不存在" });
+      const jobs = listTranscriptJobsForTask(taskId);
+      const crawlTaskId = jobs.find((job) => job.crawl_task_id)?.crawl_task_id || "";
+      const works = crawlTaskId ? cloudTranscription.prepareBatch({ crawlTaskId }).works : [];
+      const worksById = new Map(works.map((work) => [String(work.videoId), work]));
+      const failures = jobs.filter((job) => ["failed", "partial"].includes(job.status))
+        .map((job) => {
+          const work = worksById.get(String(job.video_id));
+          const contentType = work?.contentType === "image" || work?.hasImages ? "image" : "video";
+          const retryable = Number(job.retryable) === 1 && Number(job.attempt_count || 0) < 6;
+          return {
+            id: job.id,
+            videoId: String(job.video_id),
+            title: job.title,
+            provider: job.provider,
+            attempts: Number(job.attempt_count || 0),
+            contentType,
+            requiresOcr: contentType === "image" && !retryable,
+            errorClass: job.error_class || "unknown_terminal",
+            retryable,
+            terminalReason: job.terminal_reason || "",
+            error: job.error_message || "未记录具体错误",
+          };
+        });
+      return json(response, 200, { taskId, failures, total: failures.length });
     }
     if (request.method === "POST" && url.pathname === "/api/transcription-settings") return json(response, 200, saveTranscriptionSettings(await readJson(request)));
     if (request.method === "POST" && url.pathname === "/api/semantic-models/settings") return json(response, 200, semanticModels.saveSettings(await readJson(request)));
@@ -273,6 +306,11 @@ http.createServer(async (request, response) => {
       const { crawlTaskId, query, limit = 50, rerank = false } = await readJson(request);
       if (typeof crawlTaskId !== "string" || typeof query !== "string") return json(response, 400, { error: "搜索参数不完整。" });
       return json(response, 200, await semanticSearch.search({ crawlTaskId: crawlTaskId.trim(), query, limit, rerank: rerank === true }));
+    }
+    if (request.method === "POST" && url.pathname === "/api/semantic-search/global") {
+      const { query, sourceKeys = [], limit = 50, rerank = false } = await readJson(request);
+      if (typeof query !== "string" || !Array.isArray(sourceKeys)) return json(response, 400, { error: "搜索参数不完整。" });
+      return json(response, 200, await semanticSearch.searchAcross({ query, sourceKeys, limit, rerank: rerank === true }));
     }
     if (request.method === "POST" && url.pathname === "/api/account-profiles") return json(response, 200, updateAccountProfiles(await readJson(request)));
     if (request.method === "POST" && /^\/api\/account-profiles\/(content|favorites)\/login$/.test(url.pathname)) return json(response, 202, launchAccountLogin(url.pathname.split("/")[3]));

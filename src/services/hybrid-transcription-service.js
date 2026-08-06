@@ -9,6 +9,7 @@ const {
   createTask,
   createTranscriptJob,
   getTask,
+  listTranscriptJobsForTask,
   updateTask,
   updateTranscriptJob,
 } = require("./task-store");
@@ -150,8 +151,32 @@ function resume(taskId) {
   return controllerForTask(taskId).resume(taskId);
 }
 
-function retryFailed(taskId) {
-  return controllerForTask(taskId).retryFailed(taskId);
+function retryFailed(taskId, preference = "") {
+  if (!preference) return controllerForTask(taskId).retryFailed(taskId);
+  if (!PREFERENCES.includes(preference)) throw new Error("请选择云端优先或 Whisper 优先后再继续");
+  const task = getTask(taskId);
+  if (!task) throw new Error("转写任务不存在");
+  const jobs = listTranscriptJobsForTask(taskId);
+  const firstJob = jobs[0];
+  if (!firstJob) throw new Error("当前任务没有作品记录");
+  const context = cloudTranscription.prepareBatch({ crawlTaskId: firstJob.crawl_task_id });
+  const worksById = new Map(context.works.map((work) => [String(work.videoId), work]));
+  const summary = {
+    ...(task.summary || {}),
+    provider: preference,
+    preferredProvider: preference === "cloud-first" ? "getnotes" : "whisper",
+  };
+  updateTask(taskId, {
+    summary_json: JSON.stringify(summary),
+    phase: preference === "cloud-first" ? "失败作品将按云端优先续跑" : "失败作品将按 Whisper 优先续跑",
+  });
+  appendLog(taskId, `用户选择${preference === "cloud-first" ? "云端优先" : "Whisper 优先"}继续失败作品。`);
+  return controllers[preference].retryFailed(taskId, {
+    providerResolver(job) {
+      if (preference === "cloud-first") return "getnotes";
+      return isImageWork(worksById.get(String(job.video_id))) ? "getnotes" : "whisper";
+    },
+  });
 }
 
 function recoverPending() {

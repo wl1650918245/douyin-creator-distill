@@ -21,9 +21,10 @@
           <button class="nav-item" type="button" data-view="tasks"><span>02</span>任务中心</button>
           <button class="nav-item" type="button" data-view="archive"><span>03</span>关注与更新</button>
           <p>分析资产</p>
-          <button class="nav-item" type="button" data-view="breakdown"><span>04</span>爆款拆解</button>
-          <button class="nav-item" type="button" data-view="topics"><span>05</span>选题顾问</button>
-          <button class="nav-item" type="button" data-view="agent"><span>06</span>博主智能体</button>
+          <button class="nav-item" type="button" data-view="search"><span>04</span>智能检索</button>
+          <button class="nav-item" type="button" data-view="breakdown"><span>05</span>爆款拆解</button>
+          <button class="nav-item" type="button" data-view="topics"><span>06</span>选题顾问</button>
+          <button class="nav-item" type="button" data-view="agent"><span>07</span>博主智能体</button>
         </nav>
         <div class="sidebar-footer">
           <small><b></b>本地引擎就绪</small>
@@ -104,6 +105,32 @@
           </section>
         </section>
 
+        <section id="search-view" class="view-panel global-search-view" hidden>
+          <div class="view-heading"><div><span class="eyebrow cyan">跨资产召回</span><h1>智能检索</h1><p>用一句自然语言，搜索多个关注博主、我的收藏夹和全部已建立语义索引的作品资产。</p></div><div id="global-search-runtime" class="history-state"><span></span>正在读取本地索引</div></div>
+          <div class="global-search-overview">
+            <article><span>可搜索来源</span><strong id="global-source-count">0</strong><small>关注博主与收藏夹</small></article>
+            <article><span>已索引作品</span><strong id="global-work-count">0</strong><small>按来源与作品 ID 唯一计数</small></article>
+            <article><span>正文片段</span><strong id="global-chunk-count">0</strong><small>本地向量召回单元</small></article>
+          </div>
+          <section class="global-search-workspace">
+            <aside class="global-search-sources">
+              <div class="global-search-panel-head"><div><span class="section-label"><i></i>搜索范围</span><h2>选择知识来源</h2></div><button id="global-select-all-sources" class="text-button" type="button">全选</button></div>
+              <label class="global-source-all"><input id="global-all-assets" type="checkbox" checked /><span><strong>全部知识资产</strong><small>搜索所有已建立当前模型索引的作品</small></span></label>
+              <div id="global-source-list" class="global-source-list"><p class="task-center-note">正在读取可搜索来源...</p></div>
+              <p class="global-search-boundary">尚未建立索引的目录不会出现在结果中；普通检索只在本机计算，不调用外部模型。</p>
+            </aside>
+            <section class="global-search-canvas">
+              <div class="global-search-query">
+                <label for="global-semantic-query">你想找什么内容？</label>
+                <div><input id="global-semantic-query" type="search" maxlength="200" placeholder="例如：普通人如何用 AI 做个人业务，或者关于 Skill 蒸馏的方法" /><button id="global-semantic-submit" class="primary-button" type="button">搜索全部资产</button></div>
+                <small id="global-search-status">输入 2 至 200 个字开始搜索。</small>
+              </div>
+              <div class="global-search-result-head"><div><span class="section-label"><i></i>检索结果</span><h2 id="global-result-title">等待搜索</h2></div><button id="global-semantic-rerank" class="outline-button" type="button" disabled>精排前 20 条</button></div>
+              <div id="global-search-results" class="global-search-results"><div class="global-search-empty"><strong>从全部知识资产中找答案</strong><p>先选择范围，再输入一句话。结果会标明来源、相关度、证据片段和原作品链接。</p></div></div>
+            </section>
+          </section>
+        </section>
+
         <section id="breakdown-view" class="view-panel breakdown-view" hidden>
           <div class="view-heading"><div><span class="eyebrow cyan">分析资产</span><h1>爆款拆解</h1><p>报告只使用已审核目录与已完成的文本材料。每次提交最多 20 条，模型调用前会明确确认。</p></div><button class="outline-button" type="button" data-return-workbench>回到内容工作台</button></div>
           <section class="breakdown-result">
@@ -166,9 +193,10 @@
           <section class="legacy-pool" hidden><h2 id="distillation-pool-status">素材池</h2><code id="distillation-pool-meta"></code><div id="distillation-pool-list"></div></section>
         </section>
         <section id="settings-view" class="view-panel storage-view" hidden>
-          <div class="view-heading"><div><span class="eyebrow cyan">本地设置</span><h1>系统与账号</h1><p>管理平台登录身份、转写通道和本地运行依赖。敏感信息不会显示在页面或写入 Git。</p></div><div id="settings-save-state" class="history-state"><span></span>正在读取配置</div></div>
+          <div class="view-heading"><div><span class="eyebrow cyan">本地设置</span><h1>设置中心</h1><p>账号、运行环境与模型服务分区管理。敏感信息不会显示在页面或写入 Git。</p></div><div id="settings-save-state" class="history-state"><span></span>正在读取配置</div></div>
+          <div class="settings-subtabs" role="tablist" aria-label="设置分类"><button class="is-active" type="button" role="tab" aria-selected="true" data-settings-tab="system">系统与账号</button><button type="button" role="tab" aria-selected="false" data-settings-tab="models">模型与 API</button></div>
           <div class="storage-grid settings-grid">
-            <form id="account-profiles-form" class="history-card storage-card settings-card account-settings-card">
+            <form id="account-profiles-form" class="history-card storage-card settings-card account-settings-card" data-settings-group="system">
               <div class="account-settings-head"><div><span class="section-label"><i></i>账号中心</span><h2>两个用途，可共用或独立登录</h2><p>公开主页使用内容采集账号；收藏夹只读取收藏夹账号自己的内容。</p></div><button class="primary-button" type="submit">保存账号绑定</button></div>
               <div class="account-binding-options">
                 <label class="account-binding-option"><input type="radio" name="favorites-binding" value="shared" /><span><strong>共用账号</strong><small>收藏夹复用内容采集登录态，只需登录一次。</small></span></label>
@@ -180,7 +208,7 @@
               </div>
               <p id="account-capability-note" class="task-center-note">收藏夹目录已支持发现和选择式抓取；全量收藏夹数量对账仍需单独回归，不会把未验证结果标记为完整成功。</p>
             </form>
-            <form id="transcription-settings-form" class="history-card storage-card settings-card">
+            <form id="transcription-settings-form" class="history-card storage-card settings-card" data-settings-group="models" hidden>
               <span class="section-label"><i></i>云端链接提取</span>
               <label>服务地址<input id="cloud-api-base-url" type="url" required /></label>
               <label>Client ID<input id="cloud-client-id" type="text" required /></label>
@@ -188,7 +216,7 @@
               <small id="cloud-key-status">正在检查密钥配置</small>
               <button class="primary-button" type="submit">保存转写设置</button>
             </form>
-            <section class="history-card storage-card settings-card semantic-settings-card">
+            <section class="history-card storage-card settings-card semantic-settings-card" data-settings-group="models" hidden>
               <div class="semantic-settings-head">
                 <div><span class="section-label"><i></i>智能筛选模型</span><h2>本地语义召回，可自由切换</h2><p>模型按需下载到当前项目。切换只改变后续筛选使用的模型，不会删除另一套权重。</p></div>
                 <span id="semantic-runtime-state" class="semantic-runtime-state">正在检查国内下载环境</span>
@@ -200,14 +228,14 @@
               </article>
               <p id="semantic-model-message" class="task-center-note">模型权重不会写入 Git；删除操作只影响当前项目内对应模型目录。</p>
             </section>
-            <section class="history-card storage-card settings-card">
+            <section class="history-card storage-card settings-card" data-settings-group="system">
               <span class="section-label"><i></i>默认通道</span>
               <p>每次提交仍会弹窗让用户选择，这里只决定默认建议。</p>
               <label class="settings-radio"><input type="radio" name="default-provider" value="cloud-first" /> 云端优先，额度耗尽后续接 Whisper</label>
               <label class="settings-radio"><input type="radio" name="default-provider" value="whisper-first" /> Whisper 优先，单条失败后续接云端</label>
               <p>两种策略都不限制批次总数。云端每日参考上限：<strong>100 条</strong>；每条作品会记录实际使用的转写通道。</p>
             </section>
-            <section class="history-card storage-card settings-card">
+            <section class="history-card storage-card settings-card" data-settings-group="system">
               <span class="section-label"><i></i>本地依赖诊断</span>
               <div id="runtime-diagnostics" class="runtime-diagnostics">正在检查 FFmpeg、模型和 Python 环境...</div>
               <code>命令行复核：npm run doctor</code>
@@ -233,8 +261,9 @@
     </dialog>
     <dialog id="transcription-provider-dialog" class="provider-dialog">
       <form method="dialog">
-        <div class="provider-dialog-head"><span>选择本次转写优先级</span><button value="cancel" aria-label="关闭">×</button></div>
-        <p>选择首选通道后，系统会按明确规则自动续接备用通道，批次总数不受 100 条限制。</p>
+        <div class="provider-dialog-head"><span id="transcription-provider-title">选择本次转写优先级</span><button value="cancel" aria-label="关闭">×</button></div>
+        <p id="transcription-provider-copy">选择首选通道后，系统会按明确规则自动续接备用通道，批次总数不受 100 条限制。</p>
+        <section id="transcription-failure-details" class="transcription-failure-details" hidden></section>
         <button class="provider-option" value="cloud-first">
           <strong>云端优先</strong>
           <span>优先保留整理内容、音频原文和附件；达到每日参考额度或接口明确返回额度耗尽后，剩余视频自动改用本地 Whisper。</span>

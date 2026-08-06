@@ -10,6 +10,7 @@ process.env.KNOWLEDGE_ASSET_ROOT = tempRoot;
 
 const store = require("../src/services/task-store");
 const { createTranscriptionBatchOrchestrator } = require("../src/services/transcription-batch-orchestrator");
+const { transcriptionError } = require("../src/services/transcription-error-policy");
 
 function waitFor(predicate, label, timeoutMs = 6000) {
   const started = Date.now();
@@ -60,7 +61,9 @@ async function testFailureIsolationAndRetry() {
     partialPhase: "测试部分失败",
     async processJob({ job }) {
       processed.push(job.video_id);
-      if (job.video_id === "2" && failSecond) throw new Error("模拟单项失败");
+      if (job.video_id === "2" && failSecond) {
+        throw transcriptionError("ETIMEDOUT", "network_transient", true);
+      }
       store.updateTranscriptJob(job.id, { status: "completed", error_message: null });
     },
   });
@@ -77,11 +80,57 @@ async function testFailureIsolationAndRetry() {
   assert.equal(store.getTranscriptJob("failure-job-3").status, "completed");
 
   failSecond = false;
-  const retry = orchestrator.retryFailed(batch.taskId);
+  const retry = orchestrator.retryFailed(batch.taskId, { providerResolver: () => "getnotes" });
   assert.equal(retry.retried, 1);
   await waitFor(() => store.getTask(batch.taskId).status === "waiting_for_user", "失败项重试完成");
   assert.equal(store.getTranscriptJob("failure-job-2").status, "completed");
+  assert.equal(store.getTranscriptJob("failure-job-2").provider, "getnotes");
   assert.deepEqual(processed, ["1", "2", "3", "2"]);
+}
+
+async function testTerminalFailureAndGlobalRetryCap() {
+  const terminalBatch = createBatch("terminal", 1);
+  const terminalOrchestrator = createTranscriptionBatchOrchestrator({
+    provider: "whisper",
+    runningPhase: "测试批处理中",
+    completedPhase: "测试完成",
+    partialPhase: "测试部分失败",
+    async processJob() {
+      throw transcriptionError("云端任务失败", "provider_task_failed", false);
+    },
+  });
+  terminalOrchestrator.enqueue(terminalBatch.taskId, terminalBatch.crawlTaskId);
+  await waitFor(() => store.getTask(terminalBatch.taskId).status === "partial", "确定性失败停止");
+  const terminalJob = store.getTranscriptJob("terminal-job-1");
+  assert.equal(terminalJob.attempt_count, 1);
+  assert.equal(terminalJob.error_class, "provider_task_failed");
+  assert.equal(terminalJob.retryable, 0);
+  assert.throws(
+    () => terminalOrchestrator.retryFailed(terminalBatch.taskId),
+    /当前没有可重试的失败作品/,
+  );
+
+  const cappedBatch = createBatch("capped", 1);
+  store.updateTranscriptJob("capped-job-1", {
+    status: "failed",
+    attempt_count: 6,
+    max_attempts: 6,
+    retryable: 1,
+    error_class: "network_transient",
+    error_message: "ETIMEDOUT",
+  });
+  const cappedOrchestrator = createTranscriptionBatchOrchestrator({
+    provider: "whisper",
+    runningPhase: "测试批处理中",
+    completedPhase: "测试完成",
+    partialPhase: "测试部分失败",
+    async processJob() {},
+  });
+  assert.throws(
+    () => cappedOrchestrator.retryFailed(cappedBatch.taskId),
+    /当前没有可重试的失败作品/,
+  );
+  assert.equal(store.getTranscriptJob("capped-job-1").attempt_count, 6);
 }
 
 async function testPauseAndResume() {
@@ -171,6 +220,7 @@ function testCloudQuotaCounter() {
 (async () => {
   try {
     await testFailureIsolationAndRetry();
+    await testTerminalFailureAndGlobalRetryCap();
     await testPauseAndResume();
     testCloudQuotaCounter();
     testRestartRecovery();

@@ -85,10 +85,21 @@ const semanticRerankButton = document.querySelector("#semantic-rerank-button");
 const semanticIndexButton = document.querySelector("#semantic-index-button");
 const semanticClearButton = document.querySelector("#semantic-clear-button");
 const semanticIndexStatus = document.querySelector("#semantic-index-status");
+const globalSearchRuntime = document.querySelector("#global-search-runtime");
+const globalSourceList = document.querySelector("#global-source-list");
+const globalAllAssets = document.querySelector("#global-all-assets");
+const globalSelectAllSources = document.querySelector("#global-select-all-sources");
+const globalSemanticQuery = document.querySelector("#global-semantic-query");
+const globalSemanticSubmit = document.querySelector("#global-semantic-submit");
+const globalSemanticRerank = document.querySelector("#global-semantic-rerank");
+const globalSearchStatus = document.querySelector("#global-search-status");
+const globalResultTitle = document.querySelector("#global-result-title");
+const globalSearchResults = document.querySelector("#global-search-results");
 const workbenchView = document.querySelector("#workbench-view");
 const viewPanels = document.querySelectorAll(".view-panel");
-const viewNames = { workbench: "内容工作台", tasks: "任务中心", archive: "关注与更新", breakdown: "爆款拆解", topics: "选题顾问", agent: "博主智能体", settings: "设置中心", storage: "知识资产目录" };
+const viewNames = { workbench: "内容工作台", tasks: "任务中心", archive: "关注与更新", search: "智能检索", breakdown: "爆款拆解", topics: "选题顾问", agent: "博主智能体", settings: "设置中心", storage: "知识资产目录" };
 const activeViewKey = "self-media-workbench.active-view";
+const settingsTabKey = "self-media-workbench.settings-tab";
 const storageRoots = { obsidian: "正在读取本地运行配置...", local: "请选择本地文件夹" };
 let storageMode = "obsidian";
 
@@ -107,6 +118,9 @@ let semanticRanks = new Map();
 let semanticReranked = false;
 let semanticIndexTaskId = "";
 let semanticIndexPollTimer = 0;
+let globalSemanticSources = [];
+let globalSemanticResults = [];
+let globalSemanticReranked = false;
 let activeSourceTaskId = "";
 let lastTranscriptSignature = "";
 const openTaskLogs = new Set();
@@ -505,7 +519,7 @@ function renderSourceProgress(task) {
     const count = `总计 ${total} 条 · 已完成 ${completed}${failed ? ` · 剩余 ${failed}` : ""}${queued ? ` · 待处理 ${queued}` : ""}`;
     const nextStep = hasError
       ? failed
-        ? `成功的 ${completed} 条已保留，不会重复处理。点击“继续剩余 ${failed} 条”即可从失败作品继续。`
+        ? `成功的 ${completed} 条已保留，不会重复处理。点击“查看原因并继续 ${failed} 条”核对失败原因并重新选择通道。`
         : "批处理准备失败。修复配置或运行环境后，到任务中心从断点继续。"
       : paused
         ? "批处理已安全暂停。下一步：到任务中心点击“从断点继续”。"
@@ -521,7 +535,7 @@ function renderSourceProgress(task) {
       : paused || (task.status === "failed" && queued)
         ? `<div class="source-progress-actions"><button class="progress-action primary" type="button" data-transcription-resume="${escapeHtml(task.id)}">从断点继续</button></div>`
         : failed
-          ? `<div class="source-progress-actions"><button class="progress-action primary" type="button" data-transcription-retry="${escapeHtml(task.id)}">继续剩余 ${failed} 条</button></div>`
+          ? `<div class="source-progress-actions"><button class="progress-action primary" type="button" data-transcription-retry="${escapeHtml(task.id)}">查看原因并继续 ${failed} 条</button></div>`
           : "";
     updateSourceProgressMarkup(`<div class="source-progress-shell"><div class="progress-orbit" aria-hidden="true"><i></i><b>${hasError ? "!" : paused ? "停" : running ? "转" : "✓"}</b></div><div class="source-progress-body"><div class="source-progress-header"><span class="live-label"><i class="activity-dot"></i>${hasError ? "部分失败" : paused ? "已暂停" : running ? "正在转写" : escapeHtml(taskLabel(task.status))}</span><strong>文本提取</strong><code>${escapeHtml(taskDisplayName(task))}</code><small>${escapeHtml(count)}</small></div>${currentWork}<p class="source-progress-detail">${escapeHtml(auditDetail(task))}</p><p class="source-progress-next">${escapeHtml(nextStep)}</p></div>${actions}</div>`);
     return;
@@ -747,10 +761,45 @@ async function submitBreakdown(crawlTaskId, videoIds, requireConfirmation = true
   } finally { renderSelection(); }
 }
 analyzeSelected.addEventListener("click", () => submitBreakdown(currentCrawlTaskId, [...selectedIds]));
-function chooseTranscriptionProvider() {
+function transcriptionFailureGuidance(failure) {
+  const error = scrubProviderName(failure?.error || "");
+  if (failure?.contentType === "image") {
+    return {
+      reason: "这是图文作品，没有可供 Whisper 处理的音轨；云端链接解析也未成功。",
+      action: failure.requiresOcr
+        ? "多次重试仍失败，当前应保留标题、简介和互动数据，等待图文 OCR 通道处理。"
+        : "可以稍后再试云端；若继续失败，需要改用图文 OCR。",
+      raw: error,
+      requiresOcr: Boolean(failure.requiresOcr),
+    };
+  }
+  if (failure?.provider === "whisper" || /ffmpeg|音频|calledprocesserror/i.test(error)) {
+    return {
+      reason: "本地音频抽取或 Whisper 前置处理失败，常见原因是下载文件损坏、无可读音轨或 FFmpeg 退出。",
+      action: "建议本次改选云端优先重试。",
+      raw: error,
+    };
+  }
+  if (failure?.provider === "getnotes" || /任务失败|链接解析/i.test(error)) {
+    return {
+      reason: "云端链接解析任务失败，服务端没有返回更具体的作品级原因。",
+      action: "建议本次改选 Whisper 优先重试；图文作品仍会自动回到云端。",
+      raw: error,
+    };
+  }
+  return { reason: error || "未记录具体错误。", action: "可切换另一优先通道后只重试失败作品。", raw: error };
+}
+function chooseTranscriptionProvider(options = {}) {
   return new Promise((resolve) => {
+    const failures = Array.isArray(options.failures) ? options.failures : [];
+    document.querySelector("#transcription-provider-title").textContent = options.title || "选择本次转写优先级";
+    document.querySelector("#transcription-provider-copy").textContent = options.copy || "选择首选通道后，系统会按明确规则自动续接备用通道，批次总数不受 100 条限制。";
+    const details = document.querySelector("#transcription-failure-details");
+    details.hidden = failures.length === 0;
+    details.innerHTML = failures.length ? `<div class="failure-summary"><strong>${failures.length} 条作品未完成</strong><small>成功作品不会重复处理。下面是失败类别、建议通道和 SQLite 保留的最后错误。</small></div><div class="failure-list">${failures.slice(0, 30).map((failure) => { const guidance = transcriptionFailureGuidance(failure); return `<article><div><strong>${escapeHtml(failure.title || `作品 ${failure.videoId}`)}</strong><code>${escapeHtml(failure.videoId)}</code></div><p>${escapeHtml(guidance.reason)} <b>${escapeHtml(guidance.action)}</b></p><small>${escapeHtml(transcriptionProviderLabel(failure.provider))} · 已尝试 ${formatNumber(failure.attempts)} 次${guidance.raw ? ` · 原始错误：${escapeHtml(guidance.raw)}` : ""}</small></article>`; }).join("")}</div>${failures.length > 30 ? `<small>仅展示前 30 条，完整记录仍保存在任务数据库中。</small>` : ""}` : "";
     transcriptionProviderDialog.querySelectorAll(".provider-option").forEach((button) => {
       button.classList.toggle("is-default", button.value === defaultTranscriptionProvider);
+      button.disabled = Boolean(options.disableProviders);
     });
     const onClose = () => {
       transcriptionProviderDialog.removeEventListener("close", onClose);
@@ -984,7 +1033,18 @@ function setActiveView(view) {
   if (view === "agent") refreshAgentWorkbench(true);
   if (view === "breakdown") refreshViralReports();
   if (view === "topics") refreshTopicAdvisor(true);
+  if (view === "search") loadGlobalSemanticSources();
   localStorage.setItem(activeViewKey, view);
+}
+function setSettingsTab(tab) {
+  const activeTab = tab === "models" ? "models" : "system";
+  document.querySelectorAll("[data-settings-tab]").forEach((button) => {
+    const selected = button.dataset.settingsTab === activeTab;
+    button.classList.toggle("is-active", selected);
+    button.setAttribute("aria-selected", String(selected));
+  });
+  document.querySelectorAll("[data-settings-group]").forEach((panel) => { panel.hidden = panel.dataset.settingsGroup !== activeTab; });
+  localStorage.setItem(settingsTabKey, activeTab);
 }
 function renderStorageLocation() {
   const root = storageRoots[storageMode];
@@ -1024,7 +1084,7 @@ function transcriptionTaskActions(task) {
   if (["queued", "running"].includes(task.status)) actions.push(`<button type="button" data-transcription-pause="${escapeHtml(task.id)}">暂停</button>`);
   if (task.status === "pausing") actions.push('<button type="button" disabled>当前作品结束后暂停</button>');
   if (task.status === "paused" || (task.status === "failed" && Number(summary.queued || 0) > 0)) actions.push(`<button type="button" data-transcription-resume="${escapeHtml(task.id)}">从断点继续</button>`);
-  if (Number(summary.failed || 0) > 0) actions.push(`<button type="button" class="primary" data-transcription-retry="${escapeHtml(task.id)}">继续剩余 ${formatNumber(summary.failed)} 条</button>`);
+  if (Number(summary.failed || 0) > 0) actions.push(`<button type="button" class="primary" data-transcription-retry="${escapeHtml(task.id)}">查看原因并继续 ${formatNumber(summary.failed)} 条</button>`);
   if (Number(summary.completed || 0) > 0 && ["waiting_for_user", "partial", "paused", "failed"].includes(task.status)) actions.push(`<button type="button" data-task-open-transcripts="${escapeHtml(task.id)}">打开全部转写位置</button>`);
   return actions.join("");
 }
@@ -1188,6 +1248,82 @@ async function runSemanticSearch(rerank = false) {
   } finally {
     semanticSearchButton.disabled = false;
     if (semanticResultIds?.size) semanticRerankButton.disabled = false;
+  }
+}
+
+function renderGlobalSemanticSources(payload) {
+  globalSemanticSources = payload.sources || [];
+  document.querySelector("#global-source-count").textContent = formatNumber(globalSemanticSources.length);
+  document.querySelector("#global-work-count").textContent = formatNumber(payload.totalWorks || 0);
+  document.querySelector("#global-chunk-count").textContent = formatNumber(payload.totalChunks || 0);
+  globalSearchRuntime.textContent = payload.modelInstalled && payload.inferenceReady
+    ? `${payload.modelLabel}已就绪`
+    : !payload.modelInstalled ? `${payload.modelLabel}尚未安装` : "本地推理环境未就绪";
+  globalSearchRuntime.classList.toggle("is-review", !payload.modelInstalled || !payload.inferenceReady);
+  globalSemanticSubmit.disabled = !globalSemanticSources.length || !payload.modelInstalled || !payload.inferenceReady;
+  globalSourceList.innerHTML = globalSemanticSources.map((source) => `<label class="global-source-option"><input type="checkbox" value="${escapeHtml(source.sourceKey)}" checked /><span><strong>${escapeHtml(source.displayName)}</strong><small>${source.sourceType === "favorites" ? "收藏夹" : "关注博主"} · ${formatNumber(source.indexedWorks)} 条作品</small></span><em>${formatNumber(source.chunks)} 片段</em></label>`).join("") || '<div class="global-search-empty compact"><strong>暂无可搜索资产</strong><p>先在内容工作台打开一个已审核目录并建立智能索引。</p></div>';
+  globalAllAssets.checked = true;
+  globalSearchStatus.textContent = globalSemanticSources.length
+    ? `${payload.modelLabel} · 当前可跨 ${globalSemanticSources.length} 个来源搜索。`
+    : "尚未建立任何语义索引。";
+}
+
+async function loadGlobalSemanticSources() {
+  try {
+    globalSearchRuntime.textContent = "正在读取本地索引";
+    const response = await fetch("/api/semantic-sources", { cache: "no-store" });
+    const payload = await readApiPayload(response, "读取跨资产索引失败");
+    if (!response.ok) throw new Error(payload.error || "读取跨资产索引失败");
+    renderGlobalSemanticSources(payload);
+  } catch (error) {
+    globalSearchRuntime.textContent = "智能检索暂不可用";
+    globalSearchStatus.textContent = scrubProviderName(error.message);
+    globalSemanticSubmit.disabled = true;
+  }
+}
+
+function selectedGlobalSourceKeys() {
+  if (globalAllAssets.checked) return [];
+  return [...globalSourceList.querySelectorAll('input[type="checkbox"]:checked')].map((input) => input.value);
+}
+
+function renderGlobalSemanticResults(results, payload) {
+  globalSemanticResults = results;
+  globalSemanticReranked = Boolean(payload.reranked);
+  globalResultTitle.textContent = results.length ? `${results.length} 条相关作品` : "没有匹配结果";
+  globalSemanticRerank.disabled = results.length === 0;
+  globalSearchResults.innerHTML = results.map((result, index) => {
+    const score = Math.max(0, Math.min(100, Number(result.score || 0) * 100));
+    return `<article class="global-result-card"><div class="global-result-rank"><span>${String(index + 1).padStart(2, "0")}</span><i style="--score:${score}%"></i></div><div class="global-result-main"><div class="global-result-meta"><span class="${result.sourceType === "favorites" ? "is-favorite" : ""}">${escapeHtml(result.sourceName)}</span><code>${escapeHtml(result.videoId)}</code><em>${payload.reranked ? "模型精排" : `相关度 ${score.toFixed(1)}%`}</em></div><h3>${escapeHtml(result.title)}</h3><p>${escapeHtml(result.description || "暂无作品简介")}</p><blockquote>${escapeHtml(result.excerpt || "暂无正文片段")}</blockquote></div><a href="${escapeHtml(result.videoUrl)}" target="_blank" rel="noreferrer">查看原作品</a></article>`;
+  }).join("") || '<div class="global-search-empty"><strong>没有找到相关作品</strong><p>可以换一种说法，或扩大搜索来源后重试。</p></div>';
+}
+
+async function runGlobalSemanticSearch(rerank = false) {
+  const query = globalSemanticQuery.value.trim();
+  if (query.length < 2) { showToast("请输入至少 2 个字的搜索内容。", "review"); return; }
+  const sourceKeys = selectedGlobalSourceKeys();
+  if (!globalAllAssets.checked && !sourceKeys.length) { showToast("请至少选择一个关注博主或收藏夹。", "review"); return; }
+  globalSemanticSubmit.disabled = true;
+  globalSemanticRerank.disabled = true;
+  globalSearchStatus.textContent = rerank ? "分析模型正在复核前 20 条候选..." : "本地模型正在计算问题与正文片段的相似度...";
+  try {
+    const response = await fetch("/api/semantic-search/global", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, sourceKeys, limit: 100, rerank }),
+    });
+    const payload = await readApiPayload(response, "跨资产智能检索失败");
+    if (!response.ok) throw new Error(payload.error || "跨资产智能检索失败");
+    renderGlobalSemanticResults(payload.results || [], payload);
+    globalSearchStatus.textContent = payload.reranked
+      ? `精排完成 · ${payload.rerankerModel} · ${payload.results.length} 条结果`
+      : `${payload.modelId} · ${payload.results.length} 条结果 · 全程本地召回`;
+  } catch (error) {
+    globalSearchStatus.textContent = scrubProviderName(error.message);
+    showToast(`智能检索失败：${scrubProviderName(error.message)}`, "review");
+  } finally {
+    globalSemanticSubmit.disabled = false;
+    globalSemanticRerank.disabled = globalSemanticResults.length === 0;
   }
 }
 
@@ -1413,7 +1549,7 @@ async function controlTranscriptionBatch(taskId, action) {
   const messages = {
     pause: ["正在安全暂停，当前作品完成后停止取下一条。", "review"],
     resume: ["已从 SQLite 断点继续批处理。", "success"],
-    "retry-failed": ["剩余作品已重新加入队列，已成功作品不会重复处理。", "success"],
+    "retry-failed": ["剩余作品已按新选择的通道重新加入队列，已成功作品不会重复处理。", "success"],
   };
   try {
     const response = await fetch(`/api/transcription-batches/${encodeURIComponent(taskId)}/${action}`, { method: "POST" });
@@ -1425,6 +1561,34 @@ async function controlTranscriptionBatch(taskId, action) {
   } catch (error) {
     showToast(scrubProviderName(error.message), "review");
   }
+}
+async function retryFailedTranscriptions(taskId) {
+  try {
+    const response = await fetch(`/api/transcription-batches/${encodeURIComponent(taskId)}/failures`, { cache: "no-store" });
+    const payload = await readApiPayload(response, "读取失败作品失败");
+    if (!response.ok) throw new Error(payload.error || "读取失败作品失败");
+    if (!payload.failures?.length) throw new Error("当前任务已经没有失败作品");
+    const requiresOcr = payload.failures.every((failure) => transcriptionFailureGuidance(failure).requiresOcr);
+    const provider = await chooseTranscriptionProvider({
+      title: `查看原因并继续剩余 ${payload.total} 条`,
+      copy: requiresOcr
+        ? "这些作品全部是图文，云端多次失败且 Whisper 无法处理。系统已停止无效重试；标题、简介和互动数据仍然保留。"
+        : "先核对每条作品的最后失败原因，再为本次续跑重新选择优先通道。只有失败项会入队。",
+      failures: payload.failures,
+      disableProviders: requiresOcr,
+    });
+    if (!provider) return;
+    const retryResponse = await fetch(`/api/transcription-batches/${encodeURIComponent(taskId)}/retry-failed`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider }),
+    });
+    const retryPayload = await readApiPayload(retryResponse, "续跑失败作品失败");
+    if (!retryResponse.ok) throw new Error(retryPayload.error || "续跑失败作品失败");
+    showToast(`已按${provider === "cloud-first" ? "云端优先" : "Whisper 优先"}续跑 ${retryPayload.retried || payload.total} 条失败作品。`, "success");
+    lastTaskRenderSignature = "";
+    await refreshRuntimeViews();
+  } catch (error) { showToast(scrubProviderName(error.message), "review"); }
 }
 document.querySelector(".active-task-list").addEventListener("toggle", (event) => {
   if (!(event.target instanceof HTMLDetailsElement) || !event.target.matches("[data-task-log]")) return;
@@ -1442,12 +1606,13 @@ sourceProgress.addEventListener("click", async (event) => {
   const retryButton = event.target.closest("[data-transcription-retry]");
   if (pauseButton) await controlTranscriptionBatch(pauseButton.dataset.transcriptionPause, "pause");
   if (resumeButton) await controlTranscriptionBatch(resumeButton.dataset.transcriptionResume, "resume");
-  if (retryButton) await controlTranscriptionBatch(retryButton.dataset.transcriptionRetry, "retry-failed");
+  if (retryButton) await retryFailedTranscriptions(retryButton.dataset.transcriptionRetry);
   if (openButton) await showTaskDirectory(openButton.dataset.sourceOpen, openButton.dataset.sourceStatus, openButton.dataset.sourceValue);
   if (refetchButton) prepareTaskRefetch(refetchButton.dataset.sourceRefetch);
   if (reauditButton) await reauditTask(reauditButton.dataset.sourceReaudit);
   if (chooseButton) { const task = latestTasksById.get(chooseButton.dataset.favoritesChoose); if (task) await openFavoritesCollections(task); }
   if (accountButton) {
+    setSettingsTab("system");
     setActiveView("settings");
     document.querySelector("#account-profiles-form")?.scrollIntoView({ block: "start", behavior: "smooth" });
   }
@@ -1467,7 +1632,7 @@ document.querySelector(".active-task-list").addEventListener("click", async (eve
   const retryButton = event.target.closest("[data-transcription-retry]");
   if (pauseButton) await controlTranscriptionBatch(pauseButton.dataset.transcriptionPause, "pause");
   if (resumeButton) await controlTranscriptionBatch(resumeButton.dataset.transcriptionResume, "resume");
-  if (retryButton) await controlTranscriptionBatch(retryButton.dataset.transcriptionRetry, "retry-failed");
+  if (retryButton) await retryFailedTranscriptions(retryButton.dataset.transcriptionRetry);
   if (favoritesChooseButton) { const task = latestTasksById.get(favoritesChooseButton.dataset.taskFavoritesChoose); if (task) await openFavoritesCollections(task); }
   if (openButton) await showTaskDirectory(openButton.dataset.taskOpen, openButton.dataset.taskStatus, openButton.dataset.taskSource);
   if (refetchButton) prepareTaskRefetch(refetchButton.dataset.taskRefetch);
@@ -1487,6 +1652,7 @@ document.querySelector(".active-task-list").addEventListener("click", async (eve
   if (rerunButton) { const task = latestTasksById.get(rerunButton.dataset.taskRerunAnalysis); if (task?.summary?.crawlTaskId && task.summary?.workIds?.length) await submitBreakdown(task.summary.crawlTaskId, task.summary.workIds); }
   if (reauditButton) await reauditTask(reauditButton.dataset.taskReaudit);
   if (accountButton) {
+    setSettingsTab("system");
     setActiveView("settings");
     document.querySelector("#account-profiles-form")?.scrollIntoView({ block: "start", behavior: "smooth" });
   }
@@ -1757,13 +1923,15 @@ document.querySelector(".task-summary").addEventListener("click", (event) => {
 document.querySelectorAll(".nav-item[data-view]").forEach((button) => button.addEventListener("click", () => setActiveView(button.dataset.view)));
 document.querySelectorAll("[data-return-workbench]").forEach((button) => button.addEventListener("click", () => setActiveView("workbench")));
 document.querySelectorAll("[data-open-storage]").forEach((button) => button.addEventListener("click", () => setActiveView("storage")));
-document.querySelectorAll("[data-open-settings]").forEach((button) => button.addEventListener("click", () => setActiveView("settings")));
+document.querySelectorAll("[data-open-settings]").forEach((button) => button.addEventListener("click", () => { setSettingsTab("system"); setActiveView("settings"); }));
 document.querySelector(".account-card")?.addEventListener("keydown", (event) => {
   if (event.key !== "Enter" && event.key !== " ") return;
   event.preventDefault();
+  setSettingsTab("system");
   setActiveView("settings");
 });
 document.querySelector("#manage-accounts")?.addEventListener("click", () => {
+  setSettingsTab("system");
   setActiveView("settings");
   document.querySelector("#account-profiles-form")?.scrollIntoView({ block: "start", behavior: "smooth" });
 });
@@ -2006,6 +2174,31 @@ document.querySelector("#transcription-settings-form")?.addEventListener("submit
   }
 });
 
+document.querySelector(".settings-subtabs")?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-settings-tab]");
+  if (button) setSettingsTab(button.dataset.settingsTab);
+});
+globalSourceList?.addEventListener("change", (event) => {
+  if (!event.target.matches('input[type="checkbox"]')) return;
+  globalAllAssets.checked = false;
+});
+globalAllAssets?.addEventListener("change", () => {
+  if (!globalAllAssets.checked) return;
+  globalSourceList.querySelectorAll('input[type="checkbox"]').forEach((input) => { input.checked = true; });
+});
+globalSelectAllSources?.addEventListener("click", () => {
+  globalAllAssets.checked = true;
+  globalSourceList.querySelectorAll('input[type="checkbox"]').forEach((input) => { input.checked = true; });
+});
+globalSemanticSubmit?.addEventListener("click", () => runGlobalSemanticSearch(false));
+globalSemanticRerank?.addEventListener("click", () => runGlobalSemanticSearch(true));
+globalSemanticQuery?.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  runGlobalSemanticSearch(false);
+});
+
+setSettingsTab(localStorage.getItem(settingsTabKey) || "system");
 setActiveView(localStorage.getItem(activeViewKey) || "workbench");
 renderStorageLocation();
 loadRuntimeConfig();

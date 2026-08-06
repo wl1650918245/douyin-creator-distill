@@ -29,17 +29,31 @@ const baseUrl = process.env.TEST_BASE_URL || "http://127.0.0.1:8780";
     assert.ok(selectionBarMetrics.buttonHeights.every((height) => height <= 42));
     await page.locator("button[data-open-settings]").click();
     await page.locator("#settings-view").waitFor({ state: "visible" });
+    assert.equal(await page.locator('[data-settings-tab="system"]').getAttribute("aria-selected"), "true");
+    assert.equal(await page.locator("#transcription-settings-form").isHidden(), true);
+    await page.locator('[data-settings-tab="models"]').click();
+    assert.equal(await page.locator("#transcription-settings-form").isVisible(), true);
+    assert.equal(await page.locator("#account-profiles-form").isHidden(), true);
     assert.equal(await page.locator('input[name="default-provider"][value="cloud-first"]').count(), 1);
     assert.equal(await page.locator('input[name="default-provider"][value="whisper-first"]').count(), 1);
     assert.equal(await page.locator('input[name="default-provider"][value="cloud-first"]').isChecked(), true);
     assert.deepEqual(await page.locator("#transcription-provider-dialog .provider-option").evaluateAll((buttons) => buttons.map((button) => button.value)), ["cloud-first", "whisper-first"]);
     assert.match(await page.locator("#transcription-provider-dialog").innerText(), /批次总数不受 100 条限制/);
+    const failureGuidance = await page.evaluate(() => ({
+      cloud: transcriptionFailureGuidance({ provider: "getnotes", error: "云端任务失败" }),
+      local: transcriptionFailureGuidance({ provider: "whisper", error: "FFmpeg returned non-zero exit status" }),
+      image: transcriptionFailureGuidance({ provider: "getnotes", contentType: "image", requiresOcr: true, error: "云端任务失败" }),
+    }));
+    assert.match(failureGuidance.cloud.action, /Whisper 优先/);
+    assert.match(failureGuidance.local.action, /云端优先/);
+    assert.equal(failureGuidance.image.requiresOcr, true);
+    assert.match(failureGuidance.image.action, /OCR/);
     const retryMarkup = await page.evaluate(() => transcriptionTaskActions({
       id: "partial-batch",
       status: "partial",
       summary: { provider: "cloud-first", totalCount: 639, completed: 317, failed: 322 },
     }));
-    assert.match(retryMarkup, /继续剩余 322 条/);
+    assert.match(retryMarkup, /查看原因并继续 322 条/);
     assert.match(retryMarkup, /打开全部转写位置/);
     await page.evaluate(() => renderSourceProgress({
       id: "partial-batch",
@@ -49,7 +63,7 @@ const baseUrl = process.env.TEST_BASE_URL || "http://127.0.0.1:8780";
       summary: { provider: "cloud-first", totalCount: 639, completed: 317, failed: 322 },
     }));
     assert.match(await page.locator("#source-progress").innerText(), /总计 639 条.*已完成 317.*剩余 322/s);
-    assert.equal(await page.locator('#source-progress [data-transcription-retry="partial-batch"]').innerText(), "继续剩余 322 条");
+    assert.equal(await page.locator('#source-progress [data-transcription-retry="partial-batch"]').innerText(), "查看原因并继续 322 条");
     await page.evaluate(() => renderSourceProgress({
       id: "running-batch",
       source: "云端优先转写 / jianghushuo",

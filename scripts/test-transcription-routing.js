@@ -1,5 +1,6 @@
 const assert = require("assert/strict");
 const { executePreferredTranscription } = require("../src/services/transcription-routing-policy");
+const { transcriptionError } = require("../src/services/transcription-error-policy");
 
 function scenario(overrides = {}) {
   const calls = [];
@@ -58,6 +59,31 @@ async function run() {
   });
   assert.equal(await executePreferredTranscription(imageUsesCloud.options), "cloud");
   assert.deepEqual(imageUsesCloud.calls, ["provider:getnotes", "cloud"]);
+
+  const imageProviderFailure = scenario({
+    preference: "whisper-first",
+    job: { provider: "getnotes" },
+    work: { contentType: "image", hasImages: true },
+    runCloud: async () => {
+      throw transcriptionError("云端任务失败", "provider_task_failed", false);
+    },
+  });
+  await assert.rejects(
+    () => executePreferredTranscription(imageProviderFailure.options),
+    (error) => error.errorClass === "image_ocr_required" && error.retryable === false,
+  );
+  assert.deepEqual(imageProviderFailure.calls, ["provider:getnotes"]);
+
+  const imageNetworkFailure = scenario({
+    work: { contentType: "image", hasImages: true },
+    runCloud: async () => {
+      const error = new Error("ETIMEDOUT");
+      error.errorClass = "network_transient";
+      error.retryable = true;
+      throw error;
+    },
+  });
+  await assert.rejects(() => executePreferredTranscription(imageNetworkFailure.options), /ETIMEDOUT/);
 
   console.log("transcription routing policy tests passed");
 }

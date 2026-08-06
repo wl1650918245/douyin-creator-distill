@@ -339,7 +339,7 @@ async function rerankResults(query, results) {
   const config = loadModelConfig();
   const endpoint = config.baseUrl.endsWith("/v1") ? `${config.baseUrl}/chat/completions` : `${config.baseUrl}/v1/chat/completions`;
   const candidates = results.slice(0, 20).map((item) => ({
-    videoId: item.videoId,
+    resultKey: item.resultKey || item.videoId,
     title: item.title,
     description: item.description,
     evidence: item.excerpt,
@@ -350,17 +350,98 @@ async function rerankResults(query, results) {
     max_tokens: 1200,
     response_format: { type: "json_object" },
     messages: [
-      { role: "system", content: "你是检索精排器。只能根据候选证据排序，不得新增或改写 videoId。只输出 JSON。" },
-      { role: "user", content: `查询：${query}\n候选：${JSON.stringify(candidates)}\n输出格式：{\"orderedVideoIds\":[\"...\"]}` },
+      { role: "system", content: "你是检索精排器。只能根据候选证据排序，不得新增或改写 resultKey。只输出 JSON。" },
+      { role: "user", content: `查询：${query}\n候选：${JSON.stringify(candidates)}\n输出格式：{\"orderedResultKeys\":[\"...\"]}` },
     ],
   }, { timeout: 60000, headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" } });
   const content = response.data?.choices?.[0]?.message?.content;
-  const ordered = parseJsonObject(content).orderedVideoIds || [];
+  const parsed = parseJsonObject(content);
+  const ordered = parsed.orderedResultKeys || parsed.orderedVideoIds || [];
   const ranks = new Map(ordered.map((id, index) => [String(id), index]));
   return {
     model: config.model,
-    results: [...results].sort((left, right) => (ranks.get(left.videoId) ?? 9999) - (ranks.get(right.videoId) ?? 9999)),
+    results: [...results].sort((left, right) => (ranks.get(left.resultKey || left.videoId) ?? 9999) - (ranks.get(right.resultKey || right.videoId) ?? 9999)),
   };
+}
+
+function listSources() {
+  const settings = semanticModels.getSettings();
+  const model = settings.models.find((entry) => entry.id === settings.activeModel);
+  const sources = db.prepare(`SELECT embeddings.source_key,
+      COUNT(DISTINCT embeddings.video_id) AS indexed_works,
+      COUNT(*) AS chunks,
+      MAX(embeddings.created_at) AS indexed_at,
+      MAX(NULLIF(works.creator_name,'')) AS creator_name,
+      MAX(NULLIF(works.source_type,'')) AS source_type
+    FROM semantic_embeddings embeddings
+    LEFT JOIN works ON works.source_key=embeddings.source_key AND works.video_id=embeddings.video_id
+    WHERE embeddings.model_id=?
+    GROUP BY embeddings.source_key
+    ORDER BY indexed_at DESC`).all(settings.activeModel).map((row) => {
+    const favorite = String(row.source_key).startsWith("favorites:");
+    return {
+      sourceKey: row.source_key,
+      sourceType: row.source_type || (favorite ? "favorites" : "creator"),
+      displayName: favorite ? "我的收藏夹" : row.creator_name || String(row.source_key).replace(/^creator:/, ""),
+      indexedWorks: Number(row.indexed_works || 0),
+      chunks: Number(row.chunks || 0),
+      indexedAt: row.indexed_at,
+    };
+  });
+  return {
+    modelId: settings.activeModel,
+    modelLabel: model?.label || settings.activeModel,
+    modelInstalled: Boolean(model?.installed),
+    inferenceReady: inferenceReady(),
+    sources,
+    totalWorks: sources.reduce((total, source) => total + source.indexedWorks, 0),
+    totalChunks: sources.reduce((total, source) => total + source.chunks, 0),
+  };
+}
+
+async function searchAcross({ query, sourceKeys = [], limit = 50, rerank = false }) {
+  const normalizedQuery = normalizeText(query);
+  if (normalizedQuery.length < 2 || normalizedQuery.length > 200) throw new Error("请输入 2 至 200 个字符的搜索内容。");
+  if (!Array.isArray(sourceKeys) || sourceKeys.length > 100) throw new Error("搜索来源参数不正确。");
+  const model = activeModel();
+  const selectedKeys = [...new Set(sourceKeys.map((value) => String(value).trim()).filter(Boolean))];
+  const sourceClause = selectedKeys.length ? ` AND embeddings.source_key IN (${selectedKeys.map(() => "?").join(",")})` : "";
+  const rows = db.prepare(`SELECT embeddings.source_key,embeddings.video_id,embeddings.dimension,
+      embeddings.embedding,embeddings.text_excerpt,documents.title,documents.description,
+      works.video_url,works.creator_name,works.source_type
+    FROM semantic_embeddings embeddings
+    JOIN semantic_documents documents ON documents.source_key=embeddings.source_key AND documents.video_id=embeddings.video_id
+    LEFT JOIN works ON works.source_key=embeddings.source_key AND works.video_id=embeddings.video_id
+    WHERE embeddings.model_id=?${sourceClause}`).all(model.id, ...selectedKeys);
+  if (!rows.length) throw new Error(selectedKeys.length ? "所选来源尚未建立当前模型的智能索引。" : "还没有可供跨资产搜索的智能索引。");
+  const queryEmbedding = await queryVector(model, normalizedQuery);
+  const bestByWork = new Map();
+  for (const row of rows) {
+    if (Number(row.dimension) !== queryEmbedding.length) continue;
+    const resultKey = `${row.source_key}::${row.video_id}`;
+    const score = dotProduct(queryEmbedding, bufferToFloat32(row.embedding));
+    const current = bestByWork.get(resultKey);
+    if (!current || score > current.score) bestByWork.set(resultKey, { row, score });
+  }
+  const results = [...bestByWork.entries()].map(([resultKey, match]) => {
+    const favorite = String(match.row.source_key).startsWith("favorites:");
+    return {
+      resultKey,
+      sourceKey: match.row.source_key,
+      sourceType: match.row.source_type || (favorite ? "favorites" : "creator"),
+      sourceName: favorite ? "我的收藏夹" : match.row.creator_name || String(match.row.source_key).replace(/^creator:/, ""),
+      videoId: String(match.row.video_id),
+      videoUrl: match.row.video_url || `https://www.douyin.com/video/${match.row.video_id}`,
+      score: Math.round(match.score * 10000) / 10000,
+      title: match.row.title || `未命名作品 ${match.row.video_id}`,
+      description: match.row.description || "",
+      excerpt: match.row.text_excerpt,
+    };
+  }).sort((left, right) => right.score - left.score)
+    .slice(0, Math.max(1, Math.min(100, Number(limit) || 50)));
+  if (!rerank) return { query: normalizedQuery, modelId: model.id, reranked: false, searchedSources: selectedKeys, results };
+  const ranked = await rerankResults(normalizedQuery, results);
+  return { query: normalizedQuery, modelId: model.id, reranked: true, rerankerModel: ranked.model, searchedSources: selectedKeys, results: ranked.results };
 }
 
 async function search({ crawlTaskId, query, limit = 50, rerank = false }) {
@@ -404,7 +485,9 @@ module.exports = {
   contentHash,
   indexStatus,
   inferenceReady,
+  listSources,
   normalizeText,
   search,
+  searchAcross,
   submitIndex,
 };

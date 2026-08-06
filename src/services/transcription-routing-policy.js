@@ -1,3 +1,5 @@
+const { classifyTranscriptionError, transcriptionError } = require("./transcription-error-policy");
+
 function isImageWork(work) {
   return Boolean(work?.hasImages || work?.contentType === "image");
 }
@@ -20,10 +22,26 @@ async function executePreferredTranscription(options) {
     return runCloud();
   };
   const useLocal = async () => {
-    if (isImageWork(work)) throw new Error("图文作品无法使用本地 Whisper，且云端额度当前不可用");
+    if (isImageWork(work)) {
+      throw transcriptionError("图文作品没有音轨，无法使用本地 Whisper，需要 OCR 图文提取通道", "image_ocr_required", false);
+    }
     await markProvider("whisper");
     return runLocal();
   };
+  const useImageCloud = async () => {
+    if (!(await cloudAvailable())) {
+      throw transcriptionError("图文作品的云端通道当前不可用，且本地 Whisper 不支持图文，需要 OCR 图文提取通道", "image_ocr_required", false);
+    }
+    try {
+      return await useCloud();
+    } catch (error) {
+      const classified = classifyTranscriptionError(error);
+      if (classified.retryable) throw error;
+      throw transcriptionError("图文作品云端提取失败，当前没有可用 OCR 图文提取通道", "image_ocr_required", false, error);
+    }
+  };
+
+  if (isImageWork(work)) return useImageCloud();
 
   if (preference === "cloud-first") {
     if (job.provider === "whisper") return useLocal();
@@ -41,7 +59,7 @@ async function executePreferredTranscription(options) {
   }
 
   if (preference === "whisper-first") {
-    if (job.provider === "getnotes" || isImageWork(work)) return useCloud();
+    if (job.provider === "getnotes") return useCloud();
     try {
       return await useLocal();
     } catch (error) {

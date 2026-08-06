@@ -12,6 +12,7 @@ const baseUrl = process.env.TEST_BASE_URL || "http://127.0.0.1:8780";
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
     await page.locator("button[data-open-settings]").click();
+    await page.locator('[data-settings-tab="models"]').click();
     await page.locator("#semantic-model-list .semantic-model-card").first().waitFor();
     assert.equal(await page.locator("#semantic-model-list .semantic-model-card").count(), 2);
     assert.match(await page.locator("#semantic-model-list").innerText(), /轻量模式/);

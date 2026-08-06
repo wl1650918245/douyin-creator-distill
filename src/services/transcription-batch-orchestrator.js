@@ -9,6 +9,7 @@ const {
   updateTaskProgress,
   updateTranscriptJob,
 } = require("./task-store");
+const { classifyTranscriptionError } = require("./transcription-error-policy");
 const { saveTaskCheckpoint } = require("./work-ledger-store");
 
 function delay(milliseconds) {
@@ -39,8 +40,7 @@ function summarize(jobs, provider) {
 }
 
 function shouldAutoRetry(error) {
-  const message = String(error?.message || error || "");
-  return !/配置文件|apiKey|clientId|运行环境不完整|未登录|登录状态|total request limit|错误码\s*19|配额已用尽/i.test(message);
+  return classifyTranscriptionError(error).retryable;
 }
 
 function createTranscriptionBatchOrchestrator(options) {
@@ -127,6 +127,9 @@ function createTranscriptionBatchOrchestrator(options) {
           attempt_count: attemptCount,
           last_started_at: new Date().toISOString(),
           error_message: null,
+          error_class: null,
+          retryable: null,
+          terminal_reason: null,
         });
         syncSummary(item.taskId, {
           status: "running",
@@ -142,10 +145,14 @@ function createTranscriptionBatchOrchestrator(options) {
           await processJob({ taskId: item.taskId, crawlTaskId: item.crawlTaskId, job: { ...job, attempt_count: attemptCount }, context });
         } catch (error) {
           const maxAttempts = Number(job.max_attempts || 3);
-          const retry = attemptCount < maxAttempts && shouldAutoRetry(error);
+          const classified = classifyTranscriptionError(error);
+          const retry = attemptCount < maxAttempts && classified.retryable;
           updateTranscriptJob(job.id, {
             status: retry ? "queued" : "failed",
             error_message: String(error.message || error),
+            error_class: classified.code,
+            retryable: classified.retryable ? 1 : 0,
+            terminal_reason: classified.terminalReason,
           });
           appendLog(
             item.taskId,
@@ -213,10 +220,10 @@ function createTranscriptionBatchOrchestrator(options) {
     return getTask(taskId);
   }
 
-  function retryFailed(taskId) {
+  function retryFailed(taskId, options = {}) {
     assertOwnedTask(taskId);
-    const count = retryTranscriptJobs(taskId);
-    if (!count) throw new Error("当前任务没有失败作品需要重试");
+    const count = retryTranscriptJobs(taskId, options);
+    if (!count) throw new Error("当前没有可重试的失败作品；确定性失败、能力不支持或达到总次数上限的作品不会再次执行");
     appendLog(taskId, `已将 ${count} 条失败作品重新加入队列。`);
     syncSummary(taskId, { status: "queued", phase: "失败作品已重新排队", error_message: null, stage: "queued" });
     const job = listTranscriptJobsForTask(taskId)[0];

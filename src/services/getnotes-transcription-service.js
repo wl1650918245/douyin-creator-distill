@@ -7,6 +7,7 @@ const { appendLog, createTask, createTranscriptJob, getTask, listTranscriptJobs,
 const { createTranscriptionBatchOrchestrator } = require("./transcription-batch-orchestrator");
 const { buildWorkAssetStem } = require("./transcript-naming");
 const { filterProcessableWorks } = require("./work-ledger-store");
+const { transcriptionError } = require("./transcription-error-policy");
 
 const TEXT_EXTRACTION_CONFIG_PATH = path.resolve(__dirname, "../../config/text-extraction.config.json");
 
@@ -55,7 +56,9 @@ async function waitForNote(taskId, directNoteId) {
   if (taskId) for (let attempt = 0; attempt < 40 && !noteId; attempt++) {
     const progress = await apiRequest("POST", "/resource/note/task/progress", undefined, { task_id: String(taskId) });
     const status = String(progress.status || "").toLowerCase();
-    if (status === "failed" || status === "error") throw new Error(`Get笔记任务失败：${taskId}`);
+    if (status === "failed" || status === "error") {
+      throw transcriptionError(`云端文本提取任务失败：${taskId}`, "provider_task_failed", false);
+    }
     noteId = status === "success" && progress.note_id ? String(progress.note_id) : "";
     if (!noteId) await delay(20000);
   }
