@@ -38,10 +38,11 @@ const semanticModels = require("./src/services/semantic-model-service");
 const semanticSearch = require("./src/services/semantic-search-service");
 const { getAccountProfiles, launchAccountLogin, updateAccountProfiles } = require("./src/services/account-profile-service");
 const { listWorkLedgerSummaries } = require("./src/services/work-ledger-store");
+const creatorAnalytics = require("./src/services/creator-analytics-service");
 
 const root = __dirname; const host = "127.0.0.1"; const port = Number(process.env.PORT || 8780);
-const API_VERSION = "2026-08-04.1";
-const API_CAPABILITIES = ["account-profiles", "directory-crawl", "directory-crawl-loop", "favorites-directory", "favorites-directory-cache", "subscriptions", "scheduled-incremental-checks", "work-ledger", "text-extraction", "local-whisper", "transcription-priority-fallback", "transcription-batch-pause-resume", "transcription-batch-retry", "transcription-checkpoint-recovery", "source-transcript-folder", "viral-breakdown", "viral-report-history", "topic-advisor", "creator-agent", "creator-draft-review", "creator-transcript-assets", "semantic-model-management", "semantic-index", "semantic-search", "semantic-cross-source-search", "semantic-rerank", "analysis-model-rerank"];
+const API_VERSION = "2026-08-10.1";
+const API_CAPABILITIES = ["account-profiles", "creator-analytics", "creator-daily-snapshots", "directory-crawl", "directory-crawl-loop", "favorites-directory", "favorites-directory-cache", "subscriptions", "scheduled-incremental-checks", "work-ledger", "text-extraction", "local-whisper", "transcription-priority-fallback", "transcription-batch-pause-resume", "transcription-batch-retry", "transcription-checkpoint-recovery", "source-transcript-folder", "viral-breakdown", "viral-report-history", "topic-advisor", "creator-agent", "creator-draft-review", "creator-transcript-assets", "semantic-model-management", "semantic-index", "semantic-search", "semantic-cross-source-search", "semantic-rerank", "analysis-model-rerank"];
 const types = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -195,6 +196,11 @@ http.createServer(async (request, response) => {
     if (request.method === "GET" && url.pathname === "/api/semantic-index") return json(response, 200, semanticSearch.indexStatus(url.searchParams.get("crawlTaskId") || ""));
     if (request.method === "GET" && url.pathname === "/api/semantic-sources") return json(response, 200, semanticSearch.listSources());
     if (request.method === "GET" && url.pathname === "/api/account-profiles") return json(response, 200, getAccountProfiles());
+    if (request.method === "GET" && url.pathname === "/api/creator-analytics") return json(response, 200, creatorAnalytics.dashboard());
+    if (request.method === "GET" && /^\/api\/creator-analytics\/runs\/[^/]+$/.test(url.pathname)) {
+      const run = creatorAnalytics.getRun(url.pathname.split("/").pop());
+      return run ? json(response, 200, run) : json(response, 404, { error: "经营分析任务不存在" });
+    }
     if (request.method === "GET" && url.pathname === "/api/favorites-directory-cache") {
       const profile = resolveAccountRole("favorites");
       const cache = getFavoritesDirectoryCache(profile.profileId, 1440);
@@ -314,6 +320,9 @@ http.createServer(async (request, response) => {
     }
     if (request.method === "POST" && url.pathname === "/api/account-profiles") return json(response, 200, updateAccountProfiles(await readJson(request)));
     if (request.method === "POST" && /^\/api\/account-profiles\/(content|favorites)\/login$/.test(url.pathname)) return json(response, 202, launchAccountLogin(url.pathname.split("/")[3]));
+    if (request.method === "POST" && url.pathname === "/api/creator-analytics/runs") return json(response, 202, creatorAnalytics.submitRun("manual"));
+    if (request.method === "PATCH" && url.pathname === "/api/creator-analytics/settings") return json(response, 200, creatorAnalytics.updateSettings(await readJson(request)));
+    if (request.method === "POST" && url.pathname === "/api/creator-analytics/open-folder") return json(response, 200, { ok: true, folder: creatorAnalytics.openFolder() });
     if (request.method === "POST" && url.pathname === "/api/distillation-pool") { const { crawlTaskId, videoIds } = await readJson(request); const task = getTask(crawlTaskId); const completed = new Set(listTranscriptJobs(crawlTaskId).filter((job) => job.status === "completed").map((job) => String(job.video_id))); if (!task || task.status !== "waiting_for_user" || !Array.isArray(videoIds) || !videoIds.length || videoIds.some((id) => !completed.has(String(id)))) return json(response, 400, { error: "只能将已审核且已完成转写的作品加入蒸馏素材池" }); return json(response, 201, { sources: addDistillationSources(crawlTaskId, [...new Set(videoIds.map(String))]) }); }
     if (request.method === "POST" && /^\/api\/tasks\/[^/]+\/open-transcript-folder$/.test(url.pathname)) { const taskId = url.pathname.split("/")[3]; const folders = openTranscriptFolder(taskId); return json(response, 200, { ok: true, folder: folders[0], folders }); }
     if (request.method === "POST" && /^\/api\/tasks\/[^/]+\/open-output-folder$/.test(url.pathname)) return json(response, 200, { ok: true, folder: openTaskOutputFolder(url.pathname.split("/")[3]) });
@@ -343,6 +352,7 @@ http.createServer(async (request, response) => {
   response.writeHead(200, { "Content-Type": types[path.extname(filePath)] || "application/octet-stream", "Cache-Control": "no-store, max-age=0" }); fs.createReadStream(filePath).pipe(response);
 }).listen(port, host, () => {
   startSubscriptionScheduler();
+  creatorAnalytics.startScheduler();
   const recovered = cloudTranscription.recoverPending() + localTranscription.recoverPending() + hybridTranscription.recoverPending();
   console.log(`CreatorDistill: http://${host}:${port}`);
   if (recovered) console.log(`已从 SQLite 断点恢复 ${recovered} 个转写批次`);

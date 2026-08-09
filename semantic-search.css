@@ -22,6 +22,7 @@
 .semantic-search-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; }
 .semantic-search-actions button { min-height: 34px; padding: 7px 10px; white-space: nowrap; }
 .semantic-search-actions button:disabled { cursor: not-allowed; opacity: .42; }
+.semantic-search-actions button[aria-disabled="true"] { cursor: help; opacity: .42; }
 .semantic-score { margin-left: auto; border: 1px solid rgba(88, 214, 244, .26); border-radius: 999px; padding: 3px 6px; color: var(--cyan); background: rgba(88, 214, 244, .08); font-size: 9px; font-style: normal; font-weight: 900; }
 .table-scroll tbody tr.is-semantic-match td { background: linear-gradient(90deg, rgba(88, 214, 244, .045), transparent 46%); }
 

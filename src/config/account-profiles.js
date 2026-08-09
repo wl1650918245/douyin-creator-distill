@@ -15,8 +15,9 @@ const STATUS_DIR = path.join(RUNTIME_DIR, "account-status");
 const LEGACY_STATUS_PATH = path.join(RUNTIME_DIR, "douyin-profile-status.json");
 const ROLE_LABELS = { content: "内容采集账号", favorites: "收藏夹账号" };
 const DEFAULTS = {
-  schemaVersion: "1.0",
+  schemaVersion: "1.1",
   favoritesBinding: "shared",
+  analyticsAccountRole: "content",
   profiles: {
     content: {
       id: "content-collector",
@@ -45,11 +46,13 @@ function safeProfileId(value, fallback) {
 
 function normalizeConfig(raw = {}) {
   const favoritesBinding = raw.favoritesBinding === "independent" ? "independent" : "shared";
+  const analyticsAccountRole = raw.analyticsAccountRole === "favorites" ? "favorites" : "content";
   const content = raw.profiles?.content || {};
   const favorites = raw.profiles?.favorites || {};
   return {
-    schemaVersion: "1.0",
+    schemaVersion: "1.1",
     favoritesBinding,
+    analyticsAccountRole,
     profiles: {
       content: {
         id: safeProfileId(content.id, DEFAULTS.profiles.content.id),
@@ -78,9 +81,14 @@ function saveAccountProfiles(input = {}) {
     throw new Error("收藏夹账号绑定方式只支持 shared 或 independent");
   }
   const current = loadAccountProfiles();
+  const analyticsAccountRole = input.analyticsAccountRole ?? current.analyticsAccountRole;
+  if (!["content", "favorites"].includes(analyticsAccountRole)) {
+    throw new Error("经营分析账号只支持 content 或 favorites");
+  }
   return writeAccountProfiles(normalizeConfig({
     ...current,
     favoritesBinding: input.favoritesBinding,
+    analyticsAccountRole,
   }));
 }
 
@@ -151,6 +159,7 @@ function publicAccountProfiles() {
   return {
     schemaVersion: config.schemaVersion,
     favoritesBinding: config.favoritesBinding,
+    analyticsAccountRole: config.analyticsAccountRole,
     favoritesCapability: "directory_discovery_and_selected_crawl_verified",
     roles,
   };

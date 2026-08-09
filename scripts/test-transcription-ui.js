@@ -27,6 +27,24 @@ const baseUrl = process.env.TEST_BASE_URL || "http://127.0.0.1:8780";
     });
     assert.ok(selectionBarMetrics.height <= 100, `批量转写浮层过高: ${selectionBarMetrics.height}px`);
     assert.ok(selectionBarMetrics.buttonHeights.every((height) => height <= 42));
+    const paginationLayout = await page.evaluate(() => {
+      setActiveView("workbench");
+      workbenchView.classList.add("has-directory");
+      mainPanel.scrollTop = 120;
+      const footer = document.querySelector(".table-footer").getBoundingClientRect();
+      const selection = selectionBar.getBoundingClientRect();
+      return { footerHeight: footer.height, footerBottom: footer.bottom, selectionTop: selection.top };
+    });
+    assert.ok(paginationLayout.footerHeight > 40, "分页栏应保留完整高度");
+    assert.ok(paginationLayout.footerBottom <= paginationLayout.selectionTop + 1, "分页栏不应被底部操作浮层遮挡");
+    await page.evaluate(() => {
+      selectedIds.clear();
+      currentCrawlStatus = "";
+      renderSelection();
+    });
+    assert.equal(await page.locator("#screen-selected").getAttribute("aria-disabled"), "true");
+    await page.locator("#screen-selected").click({ force: true });
+    assert.match(await page.locator("#app-toast").innerText(), /请先勾选至少 1 条作品/);
     await page.locator("button[data-open-settings]").click();
     await page.locator("#settings-view").waitFor({ state: "visible" });
     assert.equal(await page.locator('[data-settings-tab="system"]').getAttribute("aria-selected"), "true");
@@ -55,15 +73,21 @@ const baseUrl = process.env.TEST_BASE_URL || "http://127.0.0.1:8780";
     }));
     assert.match(retryMarkup, /查看原因并继续 322 条/);
     assert.match(retryMarkup, /打开全部转写位置/);
-    await page.evaluate(() => renderSourceProgress({
+    await page.evaluate(() => {
+      setActiveView("workbench");
+      renderSourceProgress({
       id: "partial-batch",
       source: "云端优先转写 / jianghushuo",
       status: "partial",
       error_message: "322 条作品失败；其余作品已保留",
       summary: { provider: "cloud-first", totalCount: 639, completed: 317, failed: 322 },
-    }));
+      });
+    });
     assert.match(await page.locator("#source-progress").innerText(), /总计 639 条.*已完成 317.*剩余 322/s);
     assert.equal(await page.locator('#source-progress [data-transcription-retry="partial-batch"]').innerText(), "查看原因并继续 322 条");
+    assert.equal(await page.locator("#source-progress .source-progress-dismiss").getAttribute("aria-label"), "关闭本条失败提示");
+    await page.locator("#source-progress .source-progress-dismiss").click();
+    assert.equal(await page.locator("#source-progress").isHidden(), true);
     await page.evaluate(() => renderSourceProgress({
       id: "running-batch",
       source: "云端优先转写 / jianghushuo",
@@ -73,6 +97,7 @@ const baseUrl = process.env.TEST_BASE_URL || "http://127.0.0.1:8780";
       summary: { provider: "cloud-first", totalCount: 639, completed: 357, queued: 281, running: 1 },
     }));
     const runningText = await page.locator("#source-progress").innerText();
+    assert.equal(await page.locator("#source-progress").isVisible(), true);
     assert.match(runningText, /蒸馏你的 CEO 太爽了/);
     assert.match(runningText, /7663157184638105158/);
     assert.match(runningText, /本地 Whisper/);

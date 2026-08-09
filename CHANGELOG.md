@@ -6,6 +6,9 @@
 
 ### Added
 
+- 新增“账号经营”模块：可选择内容采集账号或收藏夹账号，只读采集本人创作者中心的账号概览与近期作品经营指标。
+- 新增账号与作品经营快照、运行历史和每日调度 SQLite 表；原始 JSON 与中文 Markdown 日报独立落盘，页面展示连续快照差值。
+- 经营分析使用现有 Chrome Profile 串行锁，不读取收入、私信或评论正文；登录失效和页面结构变化会明确失败。
 - 内容工作台新增可运行的智能筛选：本地向量索引、自然语言召回、相关度排序、增量复用和显式精排复核；索引状态进入任务中心。
 - SQLite 新增 `semantic_documents` 与 `semantic_embeddings`，以 `source_key + video_id` 保证作品身份，以内容哈希判断是否重算。
 - 项目独立 Python 环境补齐 CPU `torch`、`transformers` 与 `sentence-transformers`，轻量和高精度模型均完成离线推理回归。

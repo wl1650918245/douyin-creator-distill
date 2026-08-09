@@ -96,8 +96,17 @@ const globalSearchStatus = document.querySelector("#global-search-status");
 const globalResultTitle = document.querySelector("#global-result-title");
 const globalSearchResults = document.querySelector("#global-search-results");
 const workbenchView = document.querySelector("#workbench-view");
+const operationsRuntimeState = document.querySelector("#operations-runtime-state");
+const runOperationsAnalysis = document.querySelector("#run-operations-analysis");
+const openOperationsFolder = document.querySelector("#open-operations-folder");
+const operationsScheduleEnabled = document.querySelector("#operations-schedule-enabled");
+const operationsNextCheck = document.querySelector("#operations-next-check");
+const operationsAccountName = document.querySelector("#operations-account-name");
+const operationsAccountMeta = document.querySelector("#operations-account-meta");
+const operationsWorksBody = document.querySelector("#operations-works-body");
+const operationsHistoryList = document.querySelector("#operations-history-list");
 const viewPanels = document.querySelectorAll(".view-panel");
-const viewNames = { workbench: "内容工作台", tasks: "任务中心", archive: "关注与更新", search: "智能检索", breakdown: "爆款拆解", topics: "选题顾问", agent: "博主智能体", settings: "设置中心", storage: "知识资产目录" };
+const viewNames = { workbench: "内容工作台", tasks: "任务中心", archive: "关注与更新", operations: "账号经营", search: "智能检索", breakdown: "爆款拆解", topics: "选题顾问", agent: "博主智能体", settings: "设置中心", storage: "知识资产目录" };
 const activeViewKey = "self-media-workbench.active-view";
 const settingsTabKey = "self-media-workbench.settings-tab";
 const storageRoots = { obsidian: "正在读取本地运行配置...", local: "请选择本地文件夹" };
@@ -136,6 +145,7 @@ let selectedCreatorSource = "";
 let archiveCreators = [];
 let lastCreatorArchiveSignature = "";
 let toastTimer = null;
+const dismissedSourceProgress = new Set();
 let lastAccountProfileSignature = "";
 let lastAccountReadyState = null;
 let activeFavoritesDiscoveryTaskId = "";
@@ -148,6 +158,7 @@ let selectedAgentCreator = "";
 let activeCreatorAgentId = "";
 let activeCreatorAgentStatus = "";
 let lastAgentSignature = "";
+let lastOperationsSignature = "";
 
 const creatorWidthKey = "douyin-creator-distill.creator-width";
 const legacyCreatorWidthKey = "ai-viral-analysis.creator-width";
@@ -199,6 +210,24 @@ function showToast(message, tone = "default") {
     window.setTimeout(() => { appToast.hidden = true; }, 180);
   }, 5000);
 }
+function setExplainableDisabled(button, reason = "") {
+  if (!button) return;
+  button.disabled = false;
+  if (reason) {
+    button.setAttribute("aria-disabled", "true");
+    button.dataset.disabledReason = reason;
+  } else {
+    button.setAttribute("aria-disabled", "false");
+    delete button.dataset.disabledReason;
+  }
+}
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-disabled-reason]");
+  if (!button || button.getAttribute("aria-disabled") !== "true") return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  showToast(button.dataset.disabledReason, "review");
+}, true);
 async function readApiPayload(response, fallbackMessage) {
   const text = await response.text();
   let payload = {};
@@ -285,10 +314,16 @@ function renderSelection() {
       : `已从 ${filteredCount} 条筛选结果中选择 ${count} 条；其中 ${count - transcribedCount} 条待转写，完成后可深度拆解和知识蒸馏。`;
   selectionBar.classList.toggle("is-transcribing", pendingTranscripts.length > 0);
   selectionBar.classList.toggle("is-error", failedTranscripts.length > 0);
-  screenSelected.disabled = reviewOnly || count === 0;
-  analyzeSelected.disabled = reviewOnly || !allSelectedTranscribed || count > 20;
-  distillSelected.disabled = reviewOnly || !allSelectedTranscribed;
-  transcribeSelected.disabled = reviewOnly || count === 0;
+  const reviewReason = reviewOnly ? "当前目录处于待复核状态。请先完成 JSON 审核，再执行后续处理。" : "";
+  setExplainableDisabled(screenSelected, reviewReason || (!count ? "请先勾选至少 1 条作品，再进行爆款初筛。" : ""));
+  setExplainableDisabled(transcribeSelected, reviewReason || (!count ? "请先勾选至少 1 条作品，再提交转写。" : ""));
+  setExplainableDisabled(analyzeSelected, reviewReason
+    || (!count ? "请先勾选至少 1 条已经完成转写的作品。" : "")
+    || (!allSelectedTranscribed ? `已选作品中还有 ${count - transcribedCount} 条未完成转写，请先完成转写。` : "")
+    || (count > 20 ? "单份爆款拆解报告最多处理 20 条作品，请减少选择数量。" : ""));
+  setExplainableDisabled(distillSelected, reviewReason
+    || (!count ? "请先勾选多条已经完成转写的代表作品。" : "")
+    || (!allSelectedTranscribed ? `已选作品中还有 ${count - transcribedCount} 条未完成转写，请先完成转写。` : ""));
   screenSelected.textContent = count ? `爆款初筛 ${count} 条` : "爆款初筛";
   analyzeSelected.textContent = count ? `深度拆解 ${count} 条` : "深度爆款拆解";
   transcribeSelected.textContent = count ? `转写所选 ${count} 条` : "转写所选";
@@ -500,6 +535,8 @@ async function submitFavoritesCollections(collectionIds) {
 }
 function renderSourceProgress(task) {
   if (!task) { sourceProgress.hidden = true; return; }
+  const dismissKey = `${task.id}:${task.status}:${task.updated_at || task.summary?.completed || ""}`;
+  if (dismissedSourceProgress.has(dismissKey)) { sourceProgress.hidden = true; return; }
   if (isGetNotesTask(task)) {
     const summary = task.summary || {};
     const total = Number(summary.totalCount || 0);
@@ -537,7 +574,8 @@ function renderSourceProgress(task) {
         : failed
           ? `<div class="source-progress-actions"><button class="progress-action primary" type="button" data-transcription-retry="${escapeHtml(task.id)}">查看原因并继续 ${failed} 条</button></div>`
           : "";
-    updateSourceProgressMarkup(`<div class="source-progress-shell"><div class="progress-orbit" aria-hidden="true"><i></i><b>${hasError ? "!" : paused ? "停" : running ? "转" : "✓"}</b></div><div class="source-progress-body"><div class="source-progress-header"><span class="live-label"><i class="activity-dot"></i>${hasError ? "部分失败" : paused ? "已暂停" : running ? "正在转写" : escapeHtml(taskLabel(task.status))}</span><strong>文本提取</strong><code>${escapeHtml(taskDisplayName(task))}</code><small>${escapeHtml(count)}</small></div>${currentWork}<p class="source-progress-detail">${escapeHtml(auditDetail(task))}</p><p class="source-progress-next">${escapeHtml(nextStep)}</p></div>${actions}</div>`);
+    const dismiss = hasError ? `<button class="source-progress-dismiss" type="button" data-dismiss-source-progress="${escapeHtml(dismissKey)}" aria-label="关闭本条失败提示" title="关闭提示，任务记录仍保留在任务中心">×</button>` : "";
+    updateSourceProgressMarkup(`<div class="source-progress-shell">${dismiss}<div class="progress-orbit" aria-hidden="true"><i></i><b>${hasError ? "!" : paused ? "停" : running ? "转" : "✓"}</b></div><div class="source-progress-body"><div class="source-progress-header"><span class="live-label"><i class="activity-dot"></i>${hasError ? "部分失败" : paused ? "已暂停" : running ? "正在转写" : escapeHtml(taskLabel(task.status))}</span><strong>文本提取</strong><code>${escapeHtml(taskDisplayName(task))}</code><small>${escapeHtml(count)}</small></div>${currentWork}<p class="source-progress-detail">${escapeHtml(auditDetail(task))}</p><p class="source-progress-next">${escapeHtml(nextStep)}</p></div>${actions}</div>`);
     return;
   }
   const progress = task.progress || {};
@@ -1020,6 +1058,77 @@ async function refreshAgentWorkbench(force = false) {
     creatorAgentProfile.textContent = scrubProviderName(error.message);
   }
 }
+function operationsMetric(value) {
+  return value == null || value === "" ? "-" : formatNumber(value);
+}
+function operationsPercent(value) {
+  return value == null || value === "" ? "-" : `${(Number(value) * 100).toFixed(1)}%`;
+}
+function operationsDelta(value, suffix = "较上次快照") {
+  if (value == null) return "等待下一份快照形成对比";
+  return `${suffix} ${Number(value) >= 0 ? "+" : ""}${formatNumber(value)}`;
+}
+function operationsRunLabel(status) {
+  return ({ queued: "等待执行", running: "正在分析", completed: "分析完成", failed: "分析失败" })[status] || status;
+}
+function renderCreatorAnalytics(payload) {
+  const signature = JSON.stringify(payload);
+  if (signature === lastOperationsSignature) return;
+  lastOperationsSignature = signature;
+  const { settings = {}, activeRun, configuredAccount, latest, delta = {}, works = [], runs = [] } = payload;
+  const latestRun = runs[0];
+  const running = Boolean(activeRun);
+  runOperationsAnalysis.disabled = running;
+  runOperationsAnalysis.textContent = running ? "分析进行中" : "立即分析";
+  operationsScheduleEnabled.checked = settings.enabled === true;
+  operationsNextCheck.textContent = settings.enabled
+    ? `每天只读采集一次 · 下次检查 ${formatTime(settings.next_check_at)}`
+    : "关闭时只响应手动分析";
+  operationsRuntimeState.classList.toggle("is-running", running);
+  operationsRuntimeState.classList.toggle("is-error", !running && latestRun?.status === "failed");
+  operationsRuntimeState.innerHTML = `<span></span>${escapeHtml(running ? activeRun.phase : latestRun?.status === "failed" ? "上次分析失败" : latest ? `最近快照 ${formatTime(latest.snapshot_at)}` : "尚未运行")}`;
+
+  operationsAccountName.textContent = latest?.nickname || (activeRun ? "正在识别经营账号" : "等待首次分析");
+  operationsAccountMeta.textContent = latest
+    ? `抖音号 ${latest.douyin_id || "未提供"} · ${latest.permission_status === "available" ? "数据中心可用" : latest.permission_status === "restricted" ? "数据中心权限受限" : "权限状态未知"}`
+    : activeRun ? `${activeRun.account_role === "favorites" ? "收藏夹账号" : "内容采集账号"} · ${activeRun.phase}` : `${configuredAccount?.roleLabel || "经营账号"} · Profile ${configuredAccount?.profileId || "等待配置"}`;
+
+  document.querySelector("#operations-followers").textContent = operationsMetric(latest?.metrics?.followers);
+  document.querySelector("#operations-followers-delta").textContent = operationsDelta(delta.followers);
+  document.querySelector("#operations-period-plays").textContent = operationsMetric(latest?.metrics?.periodPlayCount);
+  document.querySelector("#operations-period-plays-delta").textContent = latest?.metrics?.periodPlayChange == null ? "来自创作者中心统计周期" : `较前 7 日 ${Number(latest.metrics.periodPlayChange) >= 0 ? "+" : ""}${formatNumber(latest.metrics.periodPlayChange)}`;
+  document.querySelector("#operations-home-visits").textContent = operationsMetric(latest?.metrics?.periodHomepageVisits);
+  document.querySelector("#operations-home-visits-delta").textContent = latest?.metrics?.periodHomepageVisitChange == null ? "等待后台数据" : `较前 7 日 ${Number(latest.metrics.periodHomepageVisitChange) >= 0 ? "+" : ""}${formatNumber(latest.metrics.periodHomepageVisitChange)}`;
+  document.querySelector("#operations-recent-works").textContent = operationsMetric(works.length || latest?.metrics?.recentWorkCount);
+  document.querySelector("#operations-snapshot-time").textContent = latest ? `快照 ${formatTime(latest.snapshot_at)}` : "尚无快照";
+
+  operationsWorksBody.innerHTML = works.length ? works.slice(0, 12).map((work) => `<tr>
+    <td><strong title="${escapeHtml(work.title)}">${escapeHtml(work.title)}</strong><small>${escapeHtml(work.video_id)}</small></td>
+    <td>${work.publish_timestamp ? new Date(work.publish_timestamp).toLocaleDateString("zh-CN") : "-"}</td>
+    <td>${operationsMetric(work.metrics.viewCount)}</td>
+    <td>${operationsPercent(work.metrics.bounceRate2s)}</td>
+    <td>${work.metrics.avgViewSeconds == null ? "-" : `${Number(work.metrics.avgViewSeconds).toFixed(1)} 秒`}</td>
+    <td>${operationsPercent(work.metrics.completionRate)}</td>
+    <td>${operationsPercent(work.metrics.favoriteRate)}</td>
+    <td>${operationsPercent(work.metrics.subscribeRate)}</td>
+  </tr>`).join("") : `<tr><td colspan="8">${running ? "正在读取创作者中心，请保持登录浏览器可用。" : "点击“立即分析”生成第一份经营快照。"}</td></tr>`;
+
+  operationsHistoryList.innerHTML = runs.length ? runs.slice(0, 10).map((run) => `<article class="operations-history-item is-${escapeHtml(run.status)}">
+    <div><strong>${escapeHtml(operationsRunLabel(run.status))}</strong><small>${escapeHtml(run.phase || "-")}</small></div>
+    <time>${formatTime(run.completed_at || run.started_at)}</time>
+    ${run.error_message ? `<p>${escapeHtml(run.error_message)}</p>` : run.summary ? `<p>${escapeHtml(run.summary.nickname || "经营账号")} · ${formatNumber(run.summary.workCount || 0)} 条近期作品</p>` : ""}
+  </article>`).join("") : `<p class="task-center-note">暂无经营分析记录。</p>`;
+}
+async function loadCreatorAnalytics() {
+  try {
+    const response = await fetch("/api/creator-analytics", { cache: "no-store" });
+    const payload = await readApiPayload(response, "读取经营分析失败");
+    renderCreatorAnalytics(payload);
+  } catch (error) {
+    operationsRuntimeState.classList.add("is-error");
+    operationsRuntimeState.innerHTML = `<span></span>${escapeHtml(error.message)}`;
+  }
+}
 function setActiveView(view) {
   if (!Object.hasOwn(viewNames, view) || !document.querySelector(`#${view}-view`)) view = "workbench";
   viewPanels.forEach((panel) => { panel.hidden = panel.id !== `${view}-view`; panel.classList.toggle("is-active", panel.id === `${view}-view`); });
@@ -1034,6 +1143,7 @@ function setActiveView(view) {
   if (view === "breakdown") refreshViralReports();
   if (view === "topics") refreshTopicAdvisor(true);
   if (view === "search") loadGlobalSemanticSources();
+  if (view === "operations") loadCreatorAnalytics();
   localStorage.setItem(activeViewKey, view);
 }
 function setSettingsTab(tab) {
@@ -1135,16 +1245,17 @@ function clearSemanticResults({ clearInput = false } = {}) {
   semanticRanks = new Map();
   semanticReranked = false;
   currentPage = 1;
-  semanticRerankButton.disabled = true;
-  semanticClearButton.disabled = true;
+  setExplainableDisabled(semanticRerankButton, "请先完成一次智能搜索，产生候选结果后再精排。");
+  setExplainableDisabled(semanticClearButton, "当前没有可清除的智能搜索结果。");
   if (clearInput) semanticQuery.value = "";
 }
 
 async function loadSemanticIndexStatus() {
   window.clearTimeout(semanticIndexPollTimer);
   if (!currentCrawlTaskId || currentCrawlStatus === "partial") {
-    semanticIndexButton.disabled = true;
-    semanticSearchButton.disabled = true;
+    const reason = currentCrawlStatus === "partial" ? "当前目录待复核，审核通过后才能建立或使用智能索引。" : "请先获取并打开一份作品目录。";
+    setExplainableDisabled(semanticIndexButton, reason);
+    setExplainableDisabled(semanticSearchButton, reason);
     setSemanticStatus(currentCrawlStatus === "partial" ? "待复核目录不能建立智能索引" : "打开目录后可建立本地语义索引");
     return;
   }
@@ -1153,9 +1264,14 @@ async function loadSemanticIndexStatus() {
     const status = await readApiPayload(response, "读取智能索引状态失败");
     if (!response.ok) throw new Error(status.error || "读取智能索引状态失败");
     const ready = status.indexedWorks > 0;
-    semanticIndexButton.disabled = !status.modelInstalled || !status.inferenceReady || Boolean(status.activeTaskId);
+    const indexReason = !status.modelInstalled
+      ? `${status.modelLabel}尚未安装，请到设置中心下载。`
+      : !status.inferenceReady
+        ? "本地推理依赖尚未安装，请先运行项目诊断。"
+        : status.activeTaskId ? "智能索引正在建立，请等待当前任务完成。" : "";
+    setExplainableDisabled(semanticIndexButton, indexReason);
     semanticIndexButton.textContent = status.activeTaskId ? "索引处理中" : ready ? "更新索引" : "建立索引";
-    semanticSearchButton.disabled = !ready;
+    setExplainableDisabled(semanticSearchButton, ready ? "" : "请先点击“建立索引”，完成后再进行智能搜索。");
     if (!status.modelInstalled) setSemanticStatus(`${status.modelLabel}尚未安装，请到设置中心下载`, "failed");
     else if (!status.inferenceReady) setSemanticStatus("本地推理依赖尚未安装，请运行项目诊断", "failed");
     else if (status.activeTaskId) {
@@ -1165,8 +1281,8 @@ async function loadSemanticIndexStatus() {
     } else if (ready) setSemanticStatus(`${status.modelLabel} · 已索引 ${status.indexedWorks} / ${status.totalWorks} 条作品 · ${status.chunks} 个片段`, "ready");
     else setSemanticStatus(`${status.modelLabel}已就绪，点击“建立索引”后即可搜索`);
   } catch (error) {
-    semanticIndexButton.disabled = true;
-    semanticSearchButton.disabled = true;
+    setExplainableDisabled(semanticIndexButton, `索引状态读取失败：${scrubProviderName(error.message)}`);
+    setExplainableDisabled(semanticSearchButton, `索引状态读取失败：${scrubProviderName(error.message)}`);
     setSemanticStatus(scrubProviderName(error.message), "failed");
   }
 }
@@ -1238,8 +1354,8 @@ async function runSemanticSearch(rerank = false) {
     semanticRanks = new Map(payload.results.map((item, index) => [String(item.videoId), index + 1]));
     semanticScores = new Map(payload.results.map((item, index) => [String(item.videoId), payload.reranked ? 1 - (index / Math.max(1, payload.results.length)) : Number(item.score || 0)]));
     currentPage = 1;
-    semanticClearButton.disabled = false;
-    semanticRerankButton.disabled = payload.results.length === 0;
+    setExplainableDisabled(semanticClearButton);
+    setExplainableDisabled(semanticRerankButton, payload.results.length ? "" : "本次搜索没有候选结果，无法进行精排复核。");
     setSemanticStatus(`${payload.reranked ? `精排复核完成 · ${payload.rerankerModel}` : payload.modelId} · 找到 ${payload.results.length} 条相关作品`, "ready");
     render();
   } catch (error) {
@@ -1247,7 +1363,7 @@ async function runSemanticSearch(rerank = false) {
     showToast(`智能搜索失败：${scrubProviderName(error.message)}`, "review");
   } finally {
     semanticSearchButton.disabled = false;
-    if (semanticResultIds?.size) semanticRerankButton.disabled = false;
+    setExplainableDisabled(semanticRerankButton, semanticResultIds?.size ? "" : "请先完成一次智能搜索，产生候选结果后再精排。");
   }
 }
 
@@ -1532,6 +1648,7 @@ async function refreshRuntimeViews() {
     renderCreatorArchive(creators);
     if (!document.querySelector("#topics-view").hidden) await refreshTopicAdvisor();
     if (!document.querySelector("#agent-view").hidden) await refreshAgentWorkbench();
+    if (!document.querySelector("#operations-view").hidden) await loadCreatorAnalytics();
   } catch { /* 服务不可用时保留页面结构，不把演示数据伪装为真实数据。 */ }
 }
 async function reauditTask(taskId) {
@@ -1596,6 +1713,7 @@ document.querySelector(".active-task-list").addEventListener("toggle", (event) =
   if (event.target.open) openTaskLogs.add(taskId); else openTaskLogs.delete(taskId);
 }, true);
 sourceProgress.addEventListener("click", async (event) => {
+  const dismissButton = event.target.closest("[data-dismiss-source-progress]");
   const openButton = event.target.closest("[data-source-open]");
   const refetchButton = event.target.closest("[data-source-refetch]");
   const reauditButton = event.target.closest("[data-source-reaudit]");
@@ -1604,6 +1722,14 @@ sourceProgress.addEventListener("click", async (event) => {
   const pauseButton = event.target.closest("[data-transcription-pause]");
   const resumeButton = event.target.closest("[data-transcription-resume]");
   const retryButton = event.target.closest("[data-transcription-retry]");
+  if (dismissButton) {
+    dismissedSourceProgress.add(dismissButton.dataset.dismissSourceProgress);
+    sourceProgress.hidden = true;
+    sourceProgress.replaceChildren();
+    lastSourceProgressMarkup = "";
+    showToast("已关闭本条失败提示，完整任务记录仍保留在任务中心。", "success");
+    return;
+  }
   if (pauseButton) await controlTranscriptionBatch(pauseButton.dataset.transcriptionPause, "pause");
   if (resumeButton) await controlTranscriptionBatch(resumeButton.dataset.transcriptionResume, "resume");
   if (retryButton) await retryFailedTranscriptions(retryButton.dataset.transcriptionRetry);
@@ -1970,6 +2096,9 @@ function renderAccountProfiles(settings) {
   };
   const bindingInput = document.querySelector(`input[name="favorites-binding"][value="${shared ? "shared" : "independent"}"]`);
   if (bindingInput) bindingInput.checked = true;
+  const analyticsRole = settings.analyticsAccountRole === "favorites" ? "favorites" : "content";
+  const analyticsInput = document.querySelector(`input[name="analytics-account-role"][value="${analyticsRole}"]`);
+  if (analyticsInput) analyticsInput.checked = true;
   document.querySelector("#content-account-state").textContent = accountStatusLabel(content.status);
   document.querySelector("#content-account-meta").textContent = `Profile ${content.effectiveProfileId || "-"} · ${accountStatusTime(content.status)}`;
   document.querySelector("#favorites-account-state").textContent = shared ? `共用采集账号 · ${accountStatusLabel(favorites.status)}` : accountStatusLabel(favorites.status);
@@ -2004,16 +2133,19 @@ async function loadAccountProfiles() {
 document.querySelector("#account-profiles-form")?.addEventListener("submit", async (event) => {
   event.preventDefault();
   const favoritesBinding = document.querySelector('input[name="favorites-binding"]:checked')?.value || "shared";
+  const analyticsAccountRole = document.querySelector('input[name="analytics-account-role"]:checked')?.value || "content";
   try {
     const response = await fetch("/api/account-profiles", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ favoritesBinding }),
+      body: JSON.stringify({ favoritesBinding, analyticsAccountRole }),
     });
     const payload = await readApiPayload(response, "保存账号绑定失败");
     lastAccountProfileSignature = "";
     renderAccountProfiles(payload);
-    showToast(favoritesBinding === "shared" ? "收藏夹已设置为共用内容采集账号。" : "收藏夹已切换为独立账号，请完成独立登录。", "success");
+    showToast(`账号绑定已保存；经营分析使用${analyticsAccountRole === "favorites" ? "收藏夹账号" : "内容采集账号"}。`, "success");
+    lastOperationsSignature = "";
+    loadCreatorAnalytics();
   } catch (error) {
     showToast(error.message, "review");
   }
@@ -2171,6 +2303,45 @@ document.querySelector("#transcription-settings-form")?.addEventListener("submit
     loadTranscriptionSettings();
   } catch (error) {
     showToast(`保存转写设置失败：${scrubProviderName(error.message)}`, "review");
+  }
+});
+
+runOperationsAnalysis?.addEventListener("click", async () => {
+  runOperationsAnalysis.disabled = true;
+  runOperationsAnalysis.textContent = "正在创建任务";
+  try {
+    const response = await fetch("/api/creator-analytics/runs", { method: "POST" });
+    const run = await readApiPayload(response, "启动经营分析失败");
+    lastOperationsSignature = "";
+    showToast(run.alreadyRunning ? "已有经营分析正在执行，已切换到当前进度。" : "经营分析已开始，将在创作者中心只读采集。", "success");
+    await loadCreatorAnalytics();
+  } catch (error) {
+    showToast(error.message, "review");
+    runOperationsAnalysis.disabled = false;
+    runOperationsAnalysis.textContent = "立即分析";
+  }
+});
+openOperationsFolder?.addEventListener("click", async () => {
+  try {
+    const response = await fetch("/api/creator-analytics/open-folder", { method: "POST" });
+    await readApiPayload(response, "打开经营日报文件夹失败");
+  } catch (error) { showToast(error.message, "review"); }
+});
+operationsScheduleEnabled?.addEventListener("change", async () => {
+  const enabled = operationsScheduleEnabled.checked;
+  try {
+    const response = await fetch("/api/creator-analytics/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled, checkIntervalMinutes: 1440 }),
+    });
+    await readApiPayload(response, "保存每日分析设置失败");
+    lastOperationsSignature = "";
+    await loadCreatorAnalytics();
+    showToast(enabled ? "每日经营分析已开启。" : "每日经营分析已关闭，仍可手动执行。", "success");
+  } catch (error) {
+    operationsScheduleEnabled.checked = !enabled;
+    showToast(error.message, "review");
   }
 });
 

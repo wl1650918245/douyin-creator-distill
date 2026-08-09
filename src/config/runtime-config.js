@@ -11,6 +11,7 @@ const TRANSCRIPTS_DIR = path.join(KNOWLEDGE_ASSET_ROOT, "raw", "transcripts");
 const VIRAL_BREAKDOWN_DIR = path.join(KNOWLEDGE_ASSET_ROOT, "analyses", "viral-breakdowns");
 const TOPIC_LIBRARY_DIR = path.join(KNOWLEDGE_ASSET_ROOT, "analyses", "topic-library");
 const CREATOR_AGENTS_DIR = path.join(KNOWLEDGE_ASSET_ROOT, "agents");
+const CREATOR_ANALYTICS_DIR = path.join(KNOWLEDGE_ASSET_ROOT, "analyses", "account-operations");
 const RUNTIME_DIR = path.join(KNOWLEDGE_ASSET_ROOT, ".runtime");
 const PROFILE_LOCKS_DIR = path.join(RUNTIME_DIR, "profile-locks");
 const PROCESSED_VIDEOS_STATE_FILE = path.join(RUNTIME_DIR, "processed-video-ids.json");
@@ -172,6 +173,7 @@ module.exports = {
   ALT_CHROME_PROFILE,
   ANALYSIS_DIR,
   CREATOR_AGENTS_DIR,
+  CREATOR_ANALYTICS_DIR,
   DEFAULT_CHROME_USER_DATA_DIR,
   GETNOTES_DIR,
   TRANSCRIPTS_DIR,

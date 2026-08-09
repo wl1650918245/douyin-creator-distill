@@ -20,11 +20,12 @@
           <button class="nav-item is-active" type="button" data-view="workbench"><span>01</span>内容工作台</button>
           <button class="nav-item" type="button" data-view="tasks"><span>02</span>任务中心</button>
           <button class="nav-item" type="button" data-view="archive"><span>03</span>关注与更新</button>
+          <button class="nav-item" type="button" data-view="operations"><span>04</span>账号经营</button>
           <p>分析资产</p>
-          <button class="nav-item" type="button" data-view="search"><span>04</span>智能检索</button>
-          <button class="nav-item" type="button" data-view="breakdown"><span>05</span>爆款拆解</button>
-          <button class="nav-item" type="button" data-view="topics"><span>06</span>选题顾问</button>
-          <button class="nav-item" type="button" data-view="agent"><span>07</span>博主智能体</button>
+          <button class="nav-item" type="button" data-view="search"><span>05</span>智能检索</button>
+          <button class="nav-item" type="button" data-view="breakdown"><span>06</span>爆款拆解</button>
+          <button class="nav-item" type="button" data-view="topics"><span>07</span>选题顾问</button>
+          <button class="nav-item" type="button" data-view="agent"><span>08</span>博主智能体</button>
         </nav>
         <div class="sidebar-footer">
           <small><b></b>本地引擎就绪</small>
@@ -65,7 +66,7 @@
           <section class="semantic-search-panel" aria-labelledby="semantic-search-title">
             <div class="semantic-search-copy"><span>智能筛选</span><strong id="semantic-search-title">用一句话筛出相关作品</strong><small id="semantic-index-status">打开目录后可建立本地语义索引</small></div>
             <div class="semantic-search-box"><input id="semantic-query" type="search" maxlength="200" placeholder="例如：关于 Skill、RAG 或普通人赚钱的内容" /><button id="semantic-search-button" class="primary-button" type="button">智能搜索</button></div>
-            <div class="semantic-search-actions"><button id="semantic-rerank-button" class="outline-button" type="button" disabled>精排复核</button><button id="semantic-index-button" class="outline-button" type="button">建立索引</button><button id="semantic-clear-button" class="text-button" type="button" disabled>清除结果</button></div>
+            <div class="semantic-search-actions"><button id="semantic-rerank-button" class="outline-button" type="button" aria-disabled="true" data-disabled-reason="请先完成一次智能搜索，产生候选结果后再精排。">精排复核</button><button id="semantic-index-button" class="outline-button" type="button">建立索引</button><button id="semantic-clear-button" class="text-button" type="button" aria-disabled="true" data-disabled-reason="当前没有可清除的智能搜索结果。">清除结果</button></div>
           </section>
 
           <div class="filter-bar" aria-label="目录筛选">
@@ -80,7 +81,7 @@
           <div class="table-scroll"><table><thead><tr><th class="check-cell"><input id="select-page" type="checkbox" aria-label="全选本页" /></th><th>作品</th><th>发布日期</th><th>类型</th><th>点赞</th><th>评论</th><th>收藏</th><th>分享</th><th>总互动</th><th>文本</th><th>作品简介</th><th>操作</th></tr></thead><tbody id="works-body"></tbody></table></div>
           <div class="table-footer"><div id="page-summary">第 1 页，共 2 页</div><div class="pagination"><button id="previous-page" type="button">上一页</button><span id="page-buttons"></span><button id="next-page" type="button">下一页</button></div><label>每页 <select id="page-size"><option value="20">20</option><option value="50" selected>50</option><option value="100">100</option></select> 条</label></div>
           </section>
-          <section id="selection-bar" class="selection-bar" aria-live="polite"><div><span id="selection-count">未选择作品</span><small id="selection-note">先筛选，再勾选作品。深度拆解和知识蒸馏依赖完整转写文本。</small><small class="channel-policy">转写通道：每次提交时手动选择</small></div><div class="selection-actions"><button id="screen-selected" class="outline-button" type="button" disabled>爆款初筛</button><button id="transcribe-selected" class="primary-button" type="button" disabled>转写所选</button><button id="analyze-selected" class="outline-button" type="button" disabled>深度爆款拆解</button><button id="distill-selected" class="outline-button" type="button" disabled>知识蒸馏</button></div></section>
+          <section id="selection-bar" class="selection-bar" aria-live="polite"><div><span id="selection-count">未选择作品</span><small id="selection-note">先筛选，再勾选作品。深度拆解和知识蒸馏依赖完整转写文本。</small><small class="channel-policy">转写通道：每次提交时手动选择</small></div><div class="selection-actions"><button id="screen-selected" class="outline-button" type="button" aria-disabled="true" data-disabled-reason="请先勾选至少 1 条作品，再进行爆款初筛。">爆款初筛</button><button id="transcribe-selected" class="primary-button" type="button" aria-disabled="true" data-disabled-reason="请先勾选至少 1 条作品，再提交转写。">转写所选</button><button id="analyze-selected" class="outline-button" type="button" aria-disabled="true" data-disabled-reason="请先选择已经完成转写的作品。">深度爆款拆解</button><button id="distill-selected" class="outline-button" type="button" aria-disabled="true" data-disabled-reason="请先选择已经完成转写的代表作品。">知识蒸馏</button></div></section>
           </div>
         </section>
         </section>
@@ -102,6 +103,31 @@
           <section class="creator-archive-workspace">
             <aside class="creator-archive-rail"><div class="creator-rail-heading"><span class="section-label"><i></i>关注来源</span><small>博主 / 收藏夹</small></div><div id="creator-archive-list" class="creator-archive-list"><p class="task-center-note">正在加载关注规则...</p></div></aside>
             <section id="creator-archive-detail" class="creator-archive-detail"><div class="creator-archive-empty"><strong>正在读取关注资产</strong><p>选择左侧来源后，这里展示更新规则、作品目录和历史资产。</p></div></section>
+          </section>
+        </section>
+
+        <section id="operations-view" class="view-panel operations-view" hidden>
+          <div class="view-heading operations-heading"><div><span class="eyebrow cyan">创作者后台只读分析</span><h1>账号经营</h1><p>每天保存账号和作品经营指标快照，用连续变化判断增长，不用单日数据冒充规律。</p></div><div class="operations-heading-actions"><span id="operations-runtime-state" class="history-state"><span></span>尚未运行</span><button id="open-operations-folder" class="outline-button" type="button">打开日报文件夹</button><button id="run-operations-analysis" class="primary-button" type="button">立即分析</button></div></div>
+          <section class="operations-control-card">
+            <div><span>经营账号</span><strong id="operations-account-name">等待识别</strong><small id="operations-account-meta">在设置中心选择使用内容采集账号或收藏夹账号。</small></div>
+            <label class="operations-schedule-toggle"><input id="operations-schedule-enabled" type="checkbox" /><span><strong>每日自动分析</strong><small id="operations-next-check">关闭时只响应手动分析</small></span></label>
+          </section>
+          <div class="operations-overview">
+            <article><span>粉丝</span><strong id="operations-followers">-</strong><small id="operations-followers-delta">等待首份快照</small></article>
+            <article><span>近 7 日播放</span><strong id="operations-period-plays">-</strong><small id="operations-period-plays-delta">来自创作者中心统计周期</small></article>
+            <article><span>主页访问</span><strong id="operations-home-visits">-</strong><small id="operations-home-visits-delta">等待后台数据</small></article>
+            <article><span>近期作品</span><strong id="operations-recent-works">-</strong><small>当前后台时间窗口内的作品</small></article>
+          </div>
+          <section class="operations-grid">
+            <section class="history-card operations-works-card">
+              <div class="card-heading"><div><span class="section-label"><i></i>作品经营信号</span><h2>近期作品表现</h2></div><small id="operations-snapshot-time">尚无快照</small></div>
+              <div class="operations-table-wrap"><table><thead><tr><th>作品</th><th>发布</th><th>播放</th><th>2 秒跳出</th><th>平均观看</th><th>完播率</th><th>收藏率</th><th>关注转化</th></tr></thead><tbody id="operations-works-body"><tr><td colspan="8">点击“立即分析”生成第一份经营快照。</td></tr></tbody></table></div>
+            </section>
+            <aside class="history-card operations-history-card">
+              <div class="card-heading"><div><span class="section-label"><i></i>连续快照</span><h2>分析历史</h2></div></div>
+              <div id="operations-history-list" class="operations-history-list"><p class="task-center-note">暂无经营分析记录。</p></div>
+              <p class="operations-boundary">只采集账号概览与作品经营指标，不读取收入、私信或评论正文。页面结构变化或登录失效会明确失败，不伪造空数据。</p>
+            </aside>
           </section>
         </section>
 
@@ -197,7 +223,7 @@
           <div class="settings-subtabs" role="tablist" aria-label="设置分类"><button class="is-active" type="button" role="tab" aria-selected="true" data-settings-tab="system">系统与账号</button><button type="button" role="tab" aria-selected="false" data-settings-tab="models">模型与 API</button></div>
           <div class="storage-grid settings-grid">
             <form id="account-profiles-form" class="history-card storage-card settings-card account-settings-card" data-settings-group="system">
-              <div class="account-settings-head"><div><span class="section-label"><i></i>账号中心</span><h2>两个用途，可共用或独立登录</h2><p>公开主页使用内容采集账号；收藏夹只读取收藏夹账号自己的内容。</p></div><button class="primary-button" type="submit">保存账号绑定</button></div>
+              <div class="account-settings-head"><div><span class="section-label"><i></i>账号中心</span><h2>采集、收藏夹与经营分析分开绑定</h2><p>经营分析只复用已登录的账号，不复制 Cookie；当前可以选择内容采集账号或收藏夹账号。</p></div><button class="primary-button" type="submit">保存账号绑定</button></div>
               <div class="account-binding-options">
                 <label class="account-binding-option"><input type="radio" name="favorites-binding" value="shared" /><span><strong>共用账号</strong><small>收藏夹复用内容采集登录态，只需登录一次。</small></span></label>
                 <label class="account-binding-option"><input type="radio" name="favorites-binding" value="independent" /><span><strong>独立账号</strong><small>收藏夹使用自己的 Profile、Cookie 和状态。</small></span></label>
@@ -206,6 +232,7 @@
                 <article class="account-role-card" data-account-role-card="content"><div class="account-role-icon">采</div><div><span>内容采集账号</span><strong id="content-account-state">正在检查</strong><small id="content-account-meta">用于公开主页与单条作品</small></div><button class="outline-button" type="button" data-account-login="content">打开登录窗口</button></article>
                 <article class="account-role-card" data-account-role-card="favorites"><div class="account-role-icon">藏</div><div><span>收藏夹账号</span><strong id="favorites-account-state">正在检查</strong><small id="favorites-account-meta">可与采集账号共用</small></div><button class="outline-button" type="button" data-account-login="favorites">打开登录窗口</button></article>
               </div>
+              <fieldset class="analytics-account-binding"><legend>经营分析使用哪个账号</legend><label><input type="radio" name="analytics-account-role" value="content" /><span><strong>内容采集账号</strong><small>适合采集账号就是本人运营账号的情况。</small></span></label><label><input type="radio" name="analytics-account-role" value="favorites" /><span><strong>收藏夹账号</strong><small>适合收藏夹账号同时是本人运营账号的情况。</small></span></label></fieldset>
               <p id="account-capability-note" class="task-center-note">收藏夹目录已支持发现和选择式抓取；全量收藏夹数量对账仍需单独回归，不会把未验证结果标记为完整成功。</p>
             </form>
             <form id="transcription-settings-form" class="history-card storage-card settings-card" data-settings-group="models" hidden>

@@ -18,16 +18,18 @@ const {
 try {
   const shared = publicAccountProfiles();
   assert.equal(shared.favoritesBinding, "shared");
+  assert.equal(shared.analyticsAccountRole, "content");
   assert.equal(shared.roles.content.effectiveProfileId, shared.roles.favorites.effectiveProfileId);
   assert.equal(shared.roles.favorites.shared, true);
   assert.equal(JSON.stringify(shared).includes("profilePath"), false);
   assert.equal(JSON.stringify(shared).includes("DouyinScraper"), false);
 
-  saveAccountProfiles({ favoritesBinding: "independent" });
+  saveAccountProfiles({ favoritesBinding: "independent", analyticsAccountRole: "favorites" });
   const independent = publicAccountProfiles();
   assert.equal(independent.favoritesBinding, "independent");
   assert.notEqual(independent.roles.content.effectiveProfileId, independent.roles.favorites.effectiveProfileId);
   assert.equal(independent.roles.favorites.shared, false);
+  assert.equal(independent.analyticsAccountRole, "favorites");
 
   writeRoleStatus("favorites", { ready: false, phase: "waiting_for_login", helperPid: 12345 });
   const loginStatus = readRoleStatus("favorites");

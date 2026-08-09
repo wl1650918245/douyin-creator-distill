@@ -24,6 +24,7 @@ const baseUrl = process.env.TEST_BASE_URL || "http://127.0.0.1:8780";
     await page.locator("#account-profiles-form").waitFor({ state: "visible" });
     const settings = await page.evaluate(() => fetch("/api/account-profiles", { cache: "no-store" }).then((response) => response.json()));
     assert.equal(await page.locator(`input[name="favorites-binding"][value="${settings.favoritesBinding}"]`).isChecked(), true);
+    assert.equal(await page.locator(`input[name="analytics-account-role"][value="${settings.analyticsAccountRole}"]`).isChecked(), true);
     assert.match(await page.locator("#content-account-meta").innerText(), /Profile content-collector/);
     assert.match(await page.locator("#favorites-account-meta").innerText(), /Profile/);
     if (settings.roles.favorites.status.ready) {
